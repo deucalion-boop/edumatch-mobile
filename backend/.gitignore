@@ -1,0 +1,9 @@
+node_modules/
+.env
+.env.*
+!.env.example
+backups/
+mobile-backups/
+uploads/
+*.log
+.vercel/

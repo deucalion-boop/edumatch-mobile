@@ -37,6 +37,10 @@ Expo Go skips remote push registration and listeners so unsupported Android push
 
 ## Connect the existing backend
 
+The `backend/` directory contains the reviewed deployment copy of the existing Express API, including the mobile routes. To deploy this repository to Vercel, set the project's Root Directory to `backend`, select the Express framework preset, and clear any Expo build command or `dist` output override. Configure the server environment in Vercel using [backend/.env.example](backend/.env.example), then redeploy. See [backend deployment instructions and hosting limits](backend/README.md).
+
+Verify `https://<your-api-domain>/api/health` and `https://<your-api-domain>/api/mobile/captcha` before setting the mobile EAS API URL or building the APK. The backend uses the existing Supabase database and private storage; credentials and local uploaded files are excluded from the repository.
+
 Mobile and web sign in through the same `/api/auth/login` and email OTP endpoints. Existing accounts are stored in Supabase's `public.users` table with password hashes and use backend-issued sessions; they are not Supabase Auth accounts. Adding Supabase API keys to the mobile `.env` will not enable these accounts to sign in. The mobile app needs only `EXPO_PUBLIC_API_URL` pointing to the running EduMatch backend. Configure `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` in the existing backend environment; the last variable accepts the server's Supabase secret key. Keep that secret out of the mobile app and rotate any key that has been shared. See [Supabase's API key guidance](https://supabase.com/docs/guides/getting-started/api-keys).
 
 The reviewed installer adds `backend/mobile/`, migrations 013 and 014, and one `/api/mobile` mount. It backs up `server.js`, detects unmanaged changes, and is idempotent. It has been applied to the neighboring EduMatch backend in this workspace. It never applies SQL or starts a service.
