@@ -8,7 +8,8 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     slug: 'edumatch',
     version: '1.0.0',
     scheme: 'edumatch',
-    icon: './assets/icon.png',
+    // Use Expo's standard icon pipeline to keep the complete school seal visible.
+    icon: './assets/edumatch-school-logo.png',
     orientation: 'portrait',
     userInterfaceStyle: 'light',
     owner: process.env.EXPO_OWNER || '4dmin01',
@@ -23,7 +24,6 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       googleServicesFile: process.env.GOOGLE_SERVICES_JSON || undefined,
       blockedPermissions: ['android.permission.RECORD_AUDIO'],
       predictiveBackGestureEnabled: true,
-      adaptiveIcon: { foregroundImage: './assets/adaptive-icon.png', backgroundColor: '#096A56' },
     },
     plugins: [
       'expo-router',
@@ -32,10 +32,15 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       ['expo-secure-store', { configureAndroidBackup: true }],
       ['expo-camera', { cameraPermission: 'EduMatch uses your camera to scan your teacher’s attendance QR code.', recordAudioAndroid: false, barcodeScannerEnabled: true }],
       ['expo-notifications', { defaultChannel: 'school-updates', color: '#087F6D' }],
-      ['expo-splash-screen', { backgroundColor: '#096A56', image: './assets/adaptive-icon.png', imageWidth: 180 }],
+      ['expo-splash-screen', {
+        backgroundColor: '#F8FAFC',
+        image: './assets/edumatch-school-logo.png',
+        imageWidth: 160,
+        resizeMode: 'contain',
+      }],
     ],
     experiments: { typedRoutes: true },
     extra: { ...(projectId ? { eas: { projectId } } : {}) },
-    web: { bundler: 'metro', output: 'single' },
+    web: { bundler: 'metro', output: 'single', favicon: './assets/edumatch-school-logo.png' },
   };
 };
