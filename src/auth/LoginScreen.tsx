@@ -192,7 +192,7 @@ function LoginAction({ title, loadingTitle, onPress, loading, disabled }: {
   const { fontScale } = useWindowDimensions();
   return <Pressable accessibilityRole="button" accessibilityLabel={loading ? loadingTitle : title} accessibilityState={{ disabled: disabled || loading, busy: loading }} aria-disabled={disabled || loading} aria-busy={loading} disabled={disabled || loading} onPress={onPress} style={({ pressed }) => [styles.submit, (disabled || loading) && { opacity: 0.62 }, pressed && { opacity: 0.85 }]}>
     <LinearGradient colors={loginGradient} locations={[0, 0.5, 1]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.submitGradient}>
-      <View style={[styles.submitContent, title !== 'Send reset link' && (loading || fontScale > 1.3 || title !== 'Log In') && styles.submitContrast]}>{loading && <ActivityIndicator size="small" color={loginColors.darkGreen} />}<Text style={styles.submitTitle}>{loading ? loadingTitle : title}</Text></View>
+      <View style={[styles.submitContent, title === 'Log In' && !loading && fontScale > 1.3 && styles.submitContrast]}>{loading && <ActivityIndicator size="small" color={loginColors.darkGreen} />}<Text style={styles.submitTitle}>{loading ? loadingTitle : title}</Text></View>
     </LinearGradient>
   </Pressable>;
 }
