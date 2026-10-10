@@ -69,7 +69,7 @@ export function LoginScreen() {
   const openCaptcha = () => {
     if (loading || configurationError || requestInFlight.current || captchaOpen.current) return;
     if (!canSignIn) {
-      setError(challenge ? expirySeconds === 0 ? 'This code has expired. Request a new code.' : 'Enter the six-digit verification code.' : !username.trim() ? 'Enter your email or username.' : 'Enter your password.');
+      setError(challenge ? expirySeconds === 0 ? 'This code has expired. Request a new code.' : 'Enter the six-digit verification code.' : !username.trim() ? 'Enter your username.' : 'Enter your password.');
       if (!challenge) { if (!username.trim()) usernameInput.current?.focus(); else passwordInput.current?.focus(); }
       return;
     }
@@ -115,12 +115,12 @@ export function LoginScreen() {
     <View style={styles.cardShadow}>
       <View style={[styles.card, compact && styles.compactCard]}>
         <View style={styles.cardHeader}>
-          <View style={styles.titleRow}>
-            <Text accessibilityRole="header" style={styles.title}>{recovering ? 'A fresh start.' : challenge ? 'Check your email' : 'Welcome Back!'}</Text>
-            <View style={styles.greeting} accessible={false}>{recovering || challenge
-              ? <Ionicons name={recovering ? 'key-outline' : 'mail-outline'} size={21} color={loginColors.deepGreen} />
-              : <Text style={styles.wave}>👋</Text>}</View>
-          </View>
+          {(recovering || challenge) && <View style={styles.titleRow}>
+            <Text accessibilityRole="header" style={styles.title}>{recovering ? 'A fresh start.' : 'Check your email'}</Text>
+            <View style={styles.greeting} accessible={false}>
+              <Ionicons name={recovering ? 'key-outline' : 'mail-outline'} size={21} color={loginColors.deepGreen} />
+            </View>
+          </View>}
           <Text style={styles.subtitle}>{recovering ? 'We’ll send a reset link to your registered email. You’ll be back to learning in no time.' : challenge ? `Enter the six-digit code sent to ${challenge.deliveryHint || 'your registered email address'}.` : 'Log in to continue and find your perfect match in academics and beyond.'}</Text>
         </View>
         <View style={styles.formBody}>
@@ -132,7 +132,7 @@ export function LoginScreen() {
             {expirySeconds !== null && <Text accessibilityLiveRegion={expirySeconds === 0 ? 'polite' : 'none'} aria-live={expirySeconds === 0 ? 'polite' : 'off'} style={[styles.helper, expirySeconds === 0 && styles.expired]}>{expirySeconds > 0 ? `Code expires in ${expirySeconds}s` : 'This code has expired. Request a new code.'}</Text>}
             <TextAction title={resendSeconds !== null && resendSeconds > 0 ? `Resend code in ${resendSeconds}s` : 'Resend code'} disabled={loading || (resendSeconds !== null && resendSeconds > 0)} onPress={() => void resend()} />
           </> : <>
-            <LoginInput inputRef={usernameInput} label="Email or Username" icon="mail-outline" value={username} onChangeText={setUsername} placeholder="you@example.com" autoCapitalize="none" autoCorrect={false} textContentType="username" autoComplete="username" editable={!loading} returnKeyType="next" onSubmitEditing={() => passwordInput.current?.focus()} />
+            <LoginInput inputRef={usernameInput} label="Username" icon="person-outline" value={username} onChangeText={setUsername} placeholder="Enter your username" autoCapitalize="none" autoCorrect={false} textContentType="username" autoComplete="username" editable={!loading} returnKeyType="next" onSubmitEditing={() => passwordInput.current?.focus()} />
             <LoginInput inputRef={passwordInput} label="Password" icon="lock-closed-outline" value={password} onChangeText={setPassword} placeholder="Enter your password" secureTextEntry={!showPassword} textContentType="password" autoComplete="current-password" autoCapitalize="none" autoCorrect={false} editable={!loading} returnKeyType="done" onSubmitEditing={openCaptcha}
               trailing={<Pressable accessibilityRole="button" accessibilityLabel={showPassword ? 'Hide password' : 'Show password'} accessibilityState={{ disabled: loading }} aria-disabled={loading} disabled={loading} onPress={() => setShowPassword(value => !value)} style={styles.passwordToggle}><Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={21} color={loginColors.deepGreen} /></Pressable>} />
             <View style={[styles.accountOptions, (compact || fontScale > 1.25) && styles.stackedOptions]}>
@@ -142,11 +142,8 @@ export function LoginScreen() {
               <TextAction title="Forgot Password?" disabled={loading} onPress={() => { setRecovering(true); setPassword(''); setShowPassword(false); setError(null); setNotice(null); }} />
             </View>
           </>}
-          <LoginAction title={recovering ? 'Send reset link' : challenge ? 'Verify code' : 'Log In'} loading={loading} loadingTitle={recovering ? 'Sending…' : challenge ? 'Verifying…' : 'Logging in…'} icon="arrow-forward" disabled={!!configurationError} onPress={recovering ? () => void recoverPassword() : openCaptcha} />
-          {(recovering || challenge) ? <TextAction title="Back to Log In" icon="arrow-back-outline" disabled={loading} onPress={backToSignIn} /> : <View style={styles.registerRow}>
-            <Text style={styles.registerText}>Don’t have an account?</Text>
-            <TextAction title="Create one" icon="arrow-forward" iconAfter disabled={loading} onPress={() => { Keyboard.dismiss(); router.push('/register'); }} />
-          </View>}
+          <LoginAction title={recovering ? 'Send reset link' : challenge ? 'Verify code' : 'Log In'} loading={loading} loadingTitle={recovering ? 'Sending…' : challenge ? 'Verifying…' : 'Logging in…'} disabled={!!configurationError} onPress={recovering ? () => void recoverPassword() : openCaptcha} />
+          {(recovering || challenge) && <TextAction title="Back to Log In" icon="arrow-back-outline" disabled={loading} onPress={backToSignIn} />}
         </View>
       </View>
     </View>
@@ -185,17 +182,17 @@ function LoginNotice({ message, error = false }: { message: string; error?: bool
   return <View accessibilityLiveRegion="polite" style={[styles.notice, error && styles.errorNotice]}><Ionicons name={error ? 'alert-circle-outline' : 'checkmark-circle-outline'} size={20} color={error ? '#8F1F1F' : '#5F3B00'} /><Text style={[styles.noticeText, error && { color: '#8F1F1F' }]}>{message}</Text></View>;
 }
 
-function TextAction({ title, icon, iconAfter = false, onPress, disabled = false }: { title: string; icon?: React.ComponentProps<typeof Ionicons>['name']; iconAfter?: boolean; onPress: () => void; disabled?: boolean }) {
-  return <Pressable accessibilityRole="button" accessibilityLabel={title} accessibilityState={{ disabled }} aria-disabled={disabled} disabled={disabled} onPress={onPress} style={({ pressed }) => [styles.textAction, disabled && { opacity: 0.5 }, pressed && { backgroundColor: '#EFF5E9' }]}>{icon && !iconAfter && <Ionicons name={icon} size={18} color={loginColors.deepGreen} />}<Text style={styles.textActionTitle}>{title}</Text>{icon && iconAfter && <Ionicons name={icon} size={18} color={loginColors.deepGreen} />}</Pressable>;
+function TextAction({ title, icon, onPress, disabled = false }: { title: string; icon?: React.ComponentProps<typeof Ionicons>['name']; onPress: () => void; disabled?: boolean }) {
+  return <Pressable accessibilityRole="button" accessibilityLabel={title} accessibilityState={{ disabled }} aria-disabled={disabled} disabled={disabled} onPress={onPress} style={({ pressed }) => [styles.textAction, disabled && { opacity: 0.5 }, pressed && { backgroundColor: '#EFF5E9' }]}>{icon && <Ionicons name={icon} size={18} color={loginColors.deepGreen} />}<Text style={styles.textActionTitle}>{title}</Text></Pressable>;
 }
 
-function LoginAction({ title, loadingTitle, icon, onPress, loading, disabled }: {
-  title: string; loadingTitle: string; icon: React.ComponentProps<typeof Ionicons>['name']; onPress: () => void; loading: boolean; disabled: boolean;
+function LoginAction({ title, loadingTitle, onPress, loading, disabled }: {
+  title: string; loadingTitle: string; onPress: () => void; loading: boolean; disabled: boolean;
 }) {
   const { fontScale } = useWindowDimensions();
   return <Pressable accessibilityRole="button" accessibilityLabel={loading ? loadingTitle : title} accessibilityState={{ disabled: disabled || loading, busy: loading }} aria-disabled={disabled || loading} aria-busy={loading} disabled={disabled || loading} onPress={onPress} style={({ pressed }) => [styles.submit, (disabled || loading) && { opacity: 0.62 }, pressed && { opacity: 0.85 }]}>
     <LinearGradient colors={loginGradient} locations={[0, 0.5, 1]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.submitGradient}>
-      <View style={[styles.submitContent, (loading || fontScale > 1.3 || title !== 'Log In') && styles.submitContrast]}>{loading && <ActivityIndicator size="small" color={loginColors.darkGreen} />}<Text style={styles.submitTitle}>{loading ? loadingTitle : title}</Text>{!loading && <Ionicons name={icon} size={20} color={loginColors.darkGreen} />}</View>
+      <View style={[styles.submitContent, title !== 'Send reset link' && (loading || fontScale > 1.3 || title !== 'Log In') && styles.submitContrast]}>{loading && <ActivityIndicator size="small" color={loginColors.darkGreen} />}<Text style={styles.submitTitle}>{loading ? loadingTitle : title}</Text></View>
     </LinearGradient>
   </Pressable>;
 }
@@ -209,7 +206,7 @@ const styles = StyleSheet.create({
   cardShadow: { borderRadius: 26, shadowColor: loginColors.darkGreen, shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.07, shadowRadius: 26, elevation: 4, backgroundColor: loginColors.card },
   card: { padding: 24, borderRadius: 26, borderWidth: 1, borderColor: loginColors.softBorder, backgroundColor: loginColors.card }, compactCard: { padding: 20 },
   cardHeader: { marginBottom: 22, gap: 8 }, titleRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  greeting: { minWidth: 34, minHeight: 34, borderRadius: 12, backgroundColor: loginColors.softGreen, alignItems: 'center', justifyContent: 'center' }, wave: { fontSize: 21 },
+  greeting: { minWidth: 34, minHeight: 34, borderRadius: 12, backgroundColor: loginColors.softGreen, alignItems: 'center', justifyContent: 'center' },
   title: { fontFamily: loginFonts.bold, fontSize: 26, lineHeight: 34, color: loginColors.deepGreen, letterSpacing: -0.8, flexShrink: 1 }, subtitle: { fontFamily: loginFonts.regular, color: loginColors.muted, fontSize: 13, lineHeight: 20 },
   formBody: { gap: 16 }, inputGroup: { gap: 8 }, inputLabel: { fontFamily: loginFonts.semibold, color: loginColors.ink, fontSize: 13, lineHeight: 19 },
   inputShell: { flexDirection: 'row', alignItems: 'center', minHeight: 54, borderWidth: 1, borderColor: loginColors.border, backgroundColor: loginColors.background, borderRadius: 14, overflow: 'hidden' }, focusedInput: { borderColor: loginColors.green, backgroundColor: loginColors.card },
@@ -222,6 +219,5 @@ const styles = StyleSheet.create({
   submitContent: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 5, borderRadius: 10 }, submitContrast: { backgroundColor: loginColors.gold },
   submitTitle: { fontFamily: loginFonts.bold, color: loginColors.darkGreen, fontSize: 15, lineHeight: 22, flexShrink: 1 },
   textAction: { minHeight: 44, borderRadius: 8, paddingHorizontal: 2, paddingVertical: 12, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6, flexShrink: 1 }, textActionTitle: { fontFamily: loginFonts.semibold, color: loginColors.deepGreen, fontSize: 11, lineHeight: 18, flexShrink: 1 },
-  registerRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', gap: 5, marginTop: 1, paddingTop: 6, borderTopWidth: 1, borderColor: loginColors.softBorder }, registerText: { fontFamily: loginFonts.regular, color: loginColors.muted, fontSize: 11, lineHeight: 18 },
   copyright: { fontFamily: loginFonts.regular, color: loginColors.muted, fontSize: 10, lineHeight: 17, textAlign: 'center' }, notice: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#E4D39C', backgroundColor: '#FFF9E8' }, errorNotice: { backgroundColor: '#FFF3F2', borderColor: '#F3D0CB' }, noticeText: { flex: 1, fontFamily: loginFonts.regular, color: '#6E542A', fontSize: 13, lineHeight: 20 },
 });

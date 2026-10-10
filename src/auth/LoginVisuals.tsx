@@ -40,7 +40,7 @@ export function LoginHero({ compact = false, largeText = false, wide = false }: 
       <Image source={require('../../assets/login-student.png')} accessibilityLabel="A smiling student in a green hoodie with a backpack and book" style={[styles.student, { height: wide ? 326 : compact ? 175 : 219, width: wide ? 326 : compact ? 175 : 219 }]} resizeMode="contain" />
       <View style={[styles.floatingCard, styles.buddiesCard, wide && styles.wideBuddies, largeText && styles.flowingCard]}>
         <View style={styles.floatingIcon}><Ionicons name="people-outline" size={18} color={loginColors.deepGreen} /></View>
-        <Text style={styles.floatingLabel}>Find Study Buddies</Text>
+        <Text style={styles.floatingLabel}>Find Your Strength</Text>
       </View>
       <View style={[styles.floatingCard, styles.programsCard, compact && styles.compactPrograms, wide && styles.widePrograms, largeText && styles.flowingCard]}>
         <View style={[styles.floatingIcon, styles.programIcon]}><Ionicons name="book-outline" size={18} color={loginColors.deepGreen} /></View>
