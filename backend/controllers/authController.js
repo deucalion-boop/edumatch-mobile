@@ -7,6 +7,7 @@ const { sendEmailViaGmail } = require('../services/gmailService');
 const { assertPasswordMeetsPolicy, PASSWORD_MIN_LENGTH, PASSWORD_MAX_LENGTH } = require('../utils/passwordPolicy');
 const { resolveStoredFileUrl } = require('../utils/fileStorage');
 const { getAppSettings } = require('../services/supabaseSettingsService');
+const { findAccountByLoginIdentifier } = require('../utils/loginIdentifier');
 const {
   findSupabaseAccount,
   findSupabaseAccountByEmail,
@@ -283,7 +284,10 @@ const login = asyncHandler(async (req, res) => {
     throw error;
   }
 
-  const user = await findSupabaseAccountByUsername(normalizedUsername);
+  const user = await findAccountByLoginIdentifier(normalizedUsername, {
+    findByUsername: findSupabaseAccountByUsername,
+    findByEmail: findSupabaseAccountByEmail,
+  });
 
   if (!user) {
     await recordLoginAttempt(req, {
