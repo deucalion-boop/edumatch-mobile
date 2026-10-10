@@ -71,11 +71,22 @@ The worker processes the existing notification events with persisted queues, ses
 
 ## Development and release builds
 
+This checkout is linked to [@4dmin01/edumatch](https://expo.dev/accounts/4dmin01/projects/edumatch), project ID `16f46295-63ba-4cd3-89aa-7874be0a09e8`. The public owner and project ID are committed as defaults in `app.config.ts`, so fresh checkouts resolve the existing project. Environment variables can override them when connecting a different Expo project.
+
+For a directly installable Android APK, use the existing `preview` profile:
+
+```powershell
+npm run eas:login
+npm run eas:info
+npm run build:preview
+```
+
+`build:preview` uses EAS CLI through `npx`, so a global CLI installation is not required. The preview APK runs independently of Metro and Expo Go. Before building, configure `EXPO_PUBLIC_API_URL` in the EAS `preview` environment with the deployed HTTPS backend address ending in `/api`. A local HTTP or LAN address will be rejected by the release app. Configure the deployed API hostname in reCAPTCHA and verify email OTP login before sharing the APK.
+
 ```powershell
 npx eas-cli@latest login
-npx eas-cli@latest init
-# Put the resulting project UUID in EXPO_PUBLIC_EAS_PROJECT_ID.
-# Set EXPO_OWNER, Android package, and iOS bundle identifier in .env.
+npm run eas:info
+# Set the public API URL in the development EAS environment.
 npx eas-cli@latest build --profile development --platform android
 npx eas-cli@latest build --profile development --platform ios
 npm run start:dev
@@ -90,7 +101,7 @@ npx eas-cli@latest build --profile production --platform all
 npx eas-cli@latest submit --profile production --platform all
 ```
 
-EAS builds and store submission have not been run in this environment. The project has no invented EAS project ID or signing credentials. [Expo Router](https://docs.expo.dev/router/introduction/), [React Native query refresh](https://tanstack.com/query/latest/docs/framework/react/react-native), [SecureStore](https://docs.expo.dev/versions/v57.0.0/sdk/securestore/), [Camera](https://docs.expo.dev/versions/v57.0.0/sdk/camera/), [Notifications](https://docs.expo.dev/versions/v57.0.0/sdk/notifications/), and [EAS Build](https://docs.expo.dev/build/introduction/) provide the upstream integration references.
+EAS project linking has been verified. Signed builds and store submission have not been run in this environment; EAS can generate the Android keystore on the first build. [Expo Router](https://docs.expo.dev/router/introduction/), [React Native query refresh](https://tanstack.com/query/latest/docs/framework/react/react-native), [SecureStore](https://docs.expo.dev/versions/v57.0.0/sdk/securestore/), [Camera](https://docs.expo.dev/versions/v57.0.0/sdk/camera/), [Notifications](https://docs.expo.dev/versions/v57.0.0/sdk/notifications/), and [EAS Build](https://docs.expo.dev/build/introduction/) provide the upstream integration references.
 
 ## Role workflows
 

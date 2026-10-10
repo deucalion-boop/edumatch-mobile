@@ -1,17 +1,17 @@
 import type { ConfigContext, ExpoConfig } from 'expo/config';
 
 export default ({ config }: ConfigContext): ExpoConfig => {
-  const projectId = process.env.EXPO_PUBLIC_EAS_PROJECT_ID;
+  const projectId = process.env.EXPO_PUBLIC_EAS_PROJECT_ID || '16f46295-63ba-4cd3-89aa-7874be0a09e8';
   return {
     ...config,
     name: 'EduMatch',
-    slug: 'edumatch-mobile',
+    slug: 'edumatch',
     version: '1.0.0',
     scheme: 'edumatch',
     icon: './assets/icon.png',
     orientation: 'portrait',
     userInterfaceStyle: 'light',
-    owner: process.env.EXPO_OWNER || undefined,
+    owner: process.env.EXPO_OWNER || '4dmin01',
     ios: {
       bundleIdentifier: process.env.EXPO_IOS_BUNDLE_IDENTIFIER || 'com.edumatch.mobile',
       supportsTablet: true,

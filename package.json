@@ -17,8 +17,11 @@
     "check": "npm run typecheck && npm test && npm run test:backend",
     "export:android": "expo export --platform android",
     "export:ios": "expo export --platform ios",
-    "build:development": "eas build --profile development --platform all",
-    "build:release": "eas build --profile production --platform all"
+    "eas:login": "npx eas-cli@latest login",
+    "eas:info": "npx eas-cli@latest project:info",
+    "build:preview": "npx eas-cli@latest build --profile preview --platform android",
+    "build:development": "npx eas-cli@latest build --profile development --platform all",
+    "build:release": "npx eas-cli@latest build --profile production --platform all"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.2",
