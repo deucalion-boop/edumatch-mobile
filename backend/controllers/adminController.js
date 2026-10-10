@@ -60,6 +60,7 @@ const {
   findSupabaseHeadTeacherByDepartment,
   listSupabaseAccounts,
 } = require('../services/supabaseAccountService');
+const { normalizeSectionId, getSectionOrThrow } = require('../services/sectionService');
 
 const asyncHandler = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 const ALLOWED_STRANDS = ['STEM', 'HUMSS', 'ABM', 'TVL'];
@@ -756,6 +757,14 @@ function normalizeStudentFields({ role, strand, gradeLevel }) {
   return { strand: normalizedStrand, gradeLevel: normalizedGradeLevel };
 }
 
+async function resolveStudentSectionId(role, sectionId) {
+  if (role !== ROLE_STUDENT) return undefined;
+  const normalizedSectionId = normalizeSectionId(sectionId);
+  if (!normalizedSectionId) return undefined;
+  const section = await getSectionOrThrow(normalizedSectionId);
+  return normalizeSectionId(section);
+}
+
 function normalizeAdminManagedRole(roleInput) {
   const normalized = String(roleInput || '').trim().toLowerCase();
   if (normalized === 'head_teacher') return ROLE_HEADTEACHER;
@@ -893,7 +902,7 @@ const getAuditLogs = asyncHandler(async (req, res) => {
 });
 
 const createAndInviteUser = asyncHandler(async (req, res) => {
-  const { name, email, username, role, contactNumber, department, subject, strand, gradeLevel } = req.body || {};
+  const { name, email, username, role, contactNumber, department, subject, strand, gradeLevel, sectionId } = req.body || {};
 
   if (!name || !email || !username || !role) {
     const error = new Error('name, email, username, and role are required');
@@ -921,6 +930,7 @@ const createAndInviteUser = asyncHandler(async (req, res) => {
   const normalizedContactNumber = normalizeContactNumber(contactNumber);
   const scopedFields = applyRoleScopedFields({ role: normalizedRole, department, subject });
   const studentFields = normalizeStudentFields({ role: normalizedRole, strand, gradeLevel });
+  const studentSectionId = await resolveStudentSectionId(normalizedRole, sectionId);
   await ensureSingleHeadTeacherPerDepartment({
     role: normalizedRole,
     department: scopedFields.department,
@@ -936,6 +946,7 @@ const createAndInviteUser = asyncHandler(async (req, res) => {
     subject: scopedFields.subject,
     department: scopedFields.department,
     gradeLevel: studentFields.gradeLevel,
+    sectionId: studentSectionId,
     managedBy: req.user._id,
     contactNumber: normalizedContactNumber,
     invite: {
@@ -960,6 +971,7 @@ const createAndInviteUser = asyncHandler(async (req, res) => {
       role: created.role,
       status: created.status,
       department: created.department || '',
+      sectionId: normalizeSectionId(created.sectionId),
       contactNumber: created.contactNumber || '',
       inviteExpiresAt: inviteResult.inviteExpiresAt || null,
       inviteSentAt: inviteResult.inviteSentAt || null,
@@ -981,6 +993,7 @@ const createUser = asyncHandler(async (req, res) => {
     subject,
     strand,
     gradeLevel,
+    sectionId,
   } = req.body;
 
   if (!name || !email || !username || !role) {
@@ -1003,6 +1016,7 @@ const createUser = asyncHandler(async (req, res) => {
   const normalizedContactNumber = normalizeContactNumber(contactNumber);
   const scopedFields = applyRoleScopedFields({ role: normalizedRole, department, subject });
   const studentFields = normalizeStudentFields({ role: normalizedRole, strand, gradeLevel });
+  const studentSectionId = await resolveStudentSectionId(normalizedRole, sectionId);
   await ensureSingleHeadTeacherPerDepartment({
     role: normalizedRole,
     department: scopedFields.department,
@@ -1032,6 +1046,7 @@ const createUser = asyncHandler(async (req, res) => {
       subject: scopedFields.subject,
       department: scopedFields.department,
       gradeLevel: studentFields.gradeLevel,
+      sectionId: studentSectionId,
       managedBy: req.user._id,
       contactNumber: normalizedContactNumber,
       invite: {
@@ -1069,6 +1084,7 @@ const createUser = asyncHandler(async (req, res) => {
       subject: created.subject || '',
       strand: created.strand || '',
       gradeLevel: created.gradeLevel || '',
+      sectionId: normalizeSectionId(created.sectionId),
       contactNumber: created.contactNumber || '',
       inviteExpiresAt: created?.invite?.expiresAt || null,
       inviteSentAt: created?.invite?.sentAt || null,

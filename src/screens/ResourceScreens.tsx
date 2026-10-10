@@ -7,6 +7,7 @@ import { edumatchApi, notificationApi } from '../api/edumatch';
 import type { Approval, ResourceItem, Role } from '../api/types';
 import { Badge, Button, Card, Chip, confirmAction, Empty, errorMessage, Field, Heading, Notice, QueryStatus, Screen, styles } from '../components/ui';
 import { displayDate, rawText } from './roleConfig';
+import { studentSectionOptions } from './studentSections';
 
 function ItemCard({ item, children }: { item: ResourceItem; children?: React.ReactNode }) {
   return <Card><View style={styles.between}><Text style={[styles.heading, { flex: 1 }]}>{item.title}</Text><Badge label={item.status} /></View>
@@ -64,20 +65,36 @@ export function RecordsScreen() {
 }
 
 function AccountCreator({ role, onClose, onSaved }: { role: Role; onClose: () => void; onSaved: () => void }) {
+  const { user } = useAuth();
   const allowed: Role[] = role === 'teacher' ? ['student'] : role === 'headteacher' ? ['teacher'] : role === 'secretary' ? ['student', 'teacher'] : ['student', 'teacher', 'headteacher', 'secretary'];
   const [accountRole, setAccountRole] = useState<Role>(allowed[0]!);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [department, setDepartment] = useState('');
   const [gradeLevel, setGradeLevel] = useState('');
   const [sectionId, setSectionId] = useState('');
-  const [strand, setStrand] = useState('');
-  const sections = useQuery({ queryKey: ['sections', role], queryFn: () => edumatchApi.sections(role), staleTime: 60_000 });
-  const create = useMutation({ mutationFn: () => edumatchApi.createUser(role, { name: name.trim(), email: email.trim(), role: accountRole, department: department.trim() || undefined, subject: accountRole === 'teacher' ? department.trim() || undefined : undefined, gradeLevel: gradeLevel.trim() || undefined, sectionId: sectionId || undefined, strand: strand || undefined }), onSuccess: onSaved });
+  const sections = useQuery({ queryKey: ['sections', role], queryFn: () => edumatchApi.sections(role), enabled: accountRole === 'student', staleTime: 60_000 });
+  const availableSections = studentSectionOptions(sections.data || [], user!);
+  const selectedSectionId = role === 'teacher' ? availableSections[0]?.id || '' : sectionId;
+  const create = useMutation({ mutationFn: () => edumatchApi.createUser(role, {
+    name: name.trim(), email: email.trim(), username: username.trim(), role: accountRole,
+    department: accountRole !== 'student' ? department.trim() || undefined : undefined,
+    subject: accountRole === 'teacher' ? department.trim() || undefined : undefined,
+    gradeLevel: accountRole === 'student' && role !== 'teacher' && gradeLevel.trim() ? `Grade ${gradeLevel.trim()}` : undefined,
+    sectionId: accountRole === 'student' ? selectedSectionId || undefined : undefined,
+  }), onSuccess: onSaved });
   return <Card><Heading title="New school account" /><View style={styles.chipRow}>{allowed.map(option => <Chip key={option} label={option === 'headteacher' ? 'Head Teacher' : option.charAt(0).toUpperCase() + option.slice(1)} active={accountRole === option} onPress={() => setAccountRole(option)} />)}</View>
     <Field label="Full name" value={name} onChangeText={setName} autoCapitalize="words" placeholder="Student or staff name" /><Field label="Email address" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" placeholder="School email address" />
-    {accountRole === 'student' ? <><Field label="Grade level" value={gradeLevel} onChangeText={setGradeLevel} keyboardType="number-pad" placeholder="For example: 10" /><Heading title="Section" /><QueryStatus loading={sections.isPending} error={sections.error} retry={() => void sections.refetch()} /><View style={styles.chipRow}>{sections.data?.map(section => <Chip key={section.id} label={section.name} active={sectionId === section.id} onPress={() => setSectionId(section.id)} />)}</View><Heading title="Track / strand" /><View style={styles.chipRow}>{['STEM', 'HUMSS', 'ABM', 'TVL', 'GENERAL'].map(option => <Chip key={option} label={option} active={strand === option} onPress={() => setStrand(option)} />)}</View></> : <Field label="Department / teaching subject" value={department} onChangeText={setDepartment} placeholder="Use the school's configured department" />}
-    {create.error ? <Notice message={errorMessage(create.error)} tone="error" /> : null}<Button title="Create account" loading={create.isPending} disabled={!name.trim() || !email.trim()} onPress={() => create.mutate()} /><Button title="Cancel" disabled={create.isPending} variant="plain" onPress={onClose} />
+    <Field label="Username" value={username} onChangeText={setUsername} autoCapitalize="none" autoCorrect={false} maxLength={50} placeholder="Student or staff username" />
+    {accountRole === 'student' ? <>
+      {role !== 'teacher' ? <Field label="Grade level" value={gradeLevel} onChangeText={setGradeLevel} keyboardType="number-pad" placeholder="For example: 10" /> : null}
+      <Heading title="Section" />
+      <QueryStatus loading={sections.isPending} error={sections.error} retry={() => void sections.refetch()} />
+      <View style={styles.chipRow}>{availableSections.map(section => <Chip key={section.id} label={section.name} active={selectedSectionId === section.id} onPress={() => setSectionId(section.id)} />)}</View>
+      {sections.isSuccess && !availableSections.length ? <Notice message={role === 'teacher' ? 'You need an assigned advisory section before adding students.' : 'No active sections are available. Contact your school administrator.'} /> : null}
+    </> : <Field label="Department / teaching subject" value={department} onChangeText={setDepartment} placeholder="Use the school's configured department" />}
+    {create.error ? <Notice message={errorMessage(create.error)} tone="error" /> : null}<Button title="Create account" loading={create.isPending} disabled={!name.trim() || !email.trim() || !username.trim() || (accountRole === 'student' && (!selectedSectionId || !availableSections.some(section => section.id === selectedSectionId)))} onPress={() => create.mutate()} /><Button title="Cancel" disabled={create.isPending} variant="plain" onPress={onClose} />
   </Card>;
 }
 
