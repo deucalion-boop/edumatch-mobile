@@ -1,0 +1,222 @@
+import React, { useRef, useState } from 'react';
+import { Text, View } from 'react-native';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useAuth } from '../auth/AuthProvider';
+import { isGradeTenStudent } from '../auth/studentAccess';
+import { edumatchApi, notificationApi } from '../api/edumatch';
+import type { Approval, ResourceItem, Role } from '../api/types';
+import { Badge, Button, Card, Chip, confirmAction, Empty, errorMessage, Field, Heading, Notice, QueryStatus, Screen, styles } from '../components/ui';
+import { displayDate, rawText } from './roleConfig';
+
+function ItemCard({ item, children }: { item: ResourceItem; children?: React.ReactNode }) {
+  return <Card><View style={styles.between}><Text style={[styles.heading, { flex: 1 }]}>{item.title}</Text><Badge label={item.status} /></View>
+    {item.subtitle ? <Text style={styles.bodyMuted}>{item.subtitle}</Text> : null}
+    {item.description ? <Text style={styles.body}>{item.description}</Text> : null}
+    {item.createdAt ? <Text style={styles.smallLabel}>{displayDate(item.createdAt)}</Text> : null}{children}</Card>;
+}
+
+function DetailFields({ row, fields }: { row: Record<string, unknown>; fields: { label: string; keys: string[] }[] }) {
+  return <>{fields.map(field => {
+    const value = rawText(row, field.keys);
+    return value ? <View key={field.label} style={styles.between}><Text style={styles.bodyMuted}>{field.label}</Text><Text style={[styles.body, { flex: 1, textAlign: 'right', fontWeight: '600' }]}>{value}</Text></View> : null;
+  })}</>;
+}
+
+export function RecordsScreen() {
+  const { user } = useAuth();
+  const role = user!.role;
+  const [search, setSearch] = useState('');
+  const [filter, setFilter] = useState('');
+  const [archived, setArchived] = useState(false);
+  const [schoolYear, setSchoolYear] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [message, setMessage] = useState('');
+  const client = useQueryClient();
+  const query = useQuery({ queryKey: ['records', role, user!.gradeLevel, filter, archived, schoolYear], queryFn: async (): Promise<ResourceItem[]> => {
+    if (role === 'student' && !isGradeTenStudent(user!)) {
+      const overview = await edumatchApi.attendance(role);
+      return overview.records.map(record => ({ id: record.id, title: record.title || rawText(record.subject || {}, ['name', 'subject'], 'Attendance record'), subtitle: record.dateKey, status: record.status || (record.isLocked ? 'Finalized' : 'Open'), raw: record }))
+        .filter(item => `${item.title} ${item.subtitle} ${item.status}`.toLowerCase().includes(filter.toLowerCase()));
+    }
+    return edumatchApi.records(role, { search: filter || undefined, archived, schoolYear: schoolYear.trim() || undefined });
+  }, staleTime: 30_000 });
+  const requestExport = useMutation({ mutationFn: () => edumatchApi.requestArchivedExport({ schoolYear: schoolYear.trim() || undefined, searchTerm: filter || undefined }), onSuccess: async () => { setMessage('Your archived records export request has been sent for administrator approval.'); await client.invalidateQueries({ queryKey: ['approvals'] }); } });
+  const archive = useMutation({ mutationFn: () => edumatchApi.archiveSchoolYear(schoolYear.trim()), onSuccess: async () => { setMessage('The school year has been archived.'); setArchived(true); await client.invalidateQueries({ queryKey: ['records'] }); } });
+  return <Screen title="School records" subtitle="Find the records available to your account." refreshing={query.isRefetching} onRefresh={() => void query.refetch()}>
+    {message ? <Notice message={message} tone="success" /> : null}
+    {role !== 'student' && !creating ? <Button title={role === 'teacher' ? 'Add a student' : role === 'headteacher' ? 'Add a teacher' : 'Add a school account'} icon="person-add-outline" onPress={() => setCreating(true)} /> : null}
+    {creating ? <AccountCreator role={role} onClose={() => setCreating(false)} onSaved={() => { setCreating(false); setMessage('The school account has been created.'); void client.invalidateQueries({ queryKey: ['records'] }); }} /> : null}
+    {role === 'secretary' ? <View style={styles.chipRow}><Chip label="Current students" active={!archived} onPress={() => setArchived(false)} /><Chip label="Archived students" active={archived} onPress={() => setArchived(true)} /></View> : null}
+    <Card><Field label="Search records" placeholder="Name, subject, or record title" value={search} onChangeText={setSearch} returnKeyType="search" onSubmitEditing={() => setFilter(search.trim())} />
+      <Button title="Search" onPress={() => setFilter(search.trim())} variant="secondary" icon="search-outline" />{filter ? <Button title="Clear search" variant="plain" onPress={() => { setSearch(''); setFilter(''); }} /> : null}</Card>
+    {role === 'secretary' ? <Card><Heading title={archived ? 'Archived school year' : 'School year management'} /><Field label="School year" placeholder="2026-2027" value={schoolYear} onChangeText={setSchoolYear} autoCapitalize="none" />
+      {requestExport.error || archive.error ? <Notice tone="error" message={errorMessage(requestExport.error || archive.error)} /> : null}
+      {archived ? <Button title="Request records export" variant="secondary" icon="document-text-outline" loading={requestExport.isPending} onPress={() => requestExport.mutate()} /> : <Button title="Archive school year" variant="secondary" disabled={!schoolYear.trim()} loading={archive.isPending} onPress={() => confirmAction('Archive this school year?', `Eligible inactive students in ${schoolYear.trim()} will be moved to archived records. Check the school year before continuing.`, 'Archive', () => archive.mutate())} />}
+    </Card> : null}
+    <QueryStatus loading={query.isPending} error={query.error} retry={() => void query.refetch()} />
+    {query.data?.map(item => <ItemCard key={item.id} item={item}><DetailFields row={item.raw} fields={[
+      { label: 'Email', keys: ['email', 'studentEmail', 'requesterEmail'] }, { label: 'Role', keys: ['role'] },
+      { label: 'Grade / section', keys: ['sectionName', 'gradeLevel', 'className'] }, { label: 'Department', keys: ['department', 'strand'] },
+      { label: 'School year', keys: ['schoolYear'] },
+    ]} /></ItemCard>)}
+    {query.isSuccess && !query.data.length ? <Empty title={filter ? 'No matching records' : 'No records yet'} detail={filter ? 'Try a different name or remove your search.' : 'School records will appear when they are available to your account.'} /> : null}
+  </Screen>;
+}
+
+function AccountCreator({ role, onClose, onSaved }: { role: Role; onClose: () => void; onSaved: () => void }) {
+  const allowed: Role[] = role === 'teacher' ? ['student'] : role === 'headteacher' ? ['teacher'] : role === 'secretary' ? ['student', 'teacher'] : ['student', 'teacher', 'headteacher', 'secretary'];
+  const [accountRole, setAccountRole] = useState<Role>(allowed[0]!);
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [department, setDepartment] = useState('');
+  const [gradeLevel, setGradeLevel] = useState('');
+  const [sectionId, setSectionId] = useState('');
+  const [strand, setStrand] = useState('');
+  const sections = useQuery({ queryKey: ['sections', role], queryFn: () => edumatchApi.sections(role), staleTime: 60_000 });
+  const create = useMutation({ mutationFn: () => edumatchApi.createUser(role, { name: name.trim(), email: email.trim(), role: accountRole, department: department.trim() || undefined, subject: accountRole === 'teacher' ? department.trim() || undefined : undefined, gradeLevel: gradeLevel.trim() || undefined, sectionId: sectionId || undefined, strand: strand || undefined }), onSuccess: onSaved });
+  return <Card><Heading title="New school account" /><View style={styles.chipRow}>{allowed.map(option => <Chip key={option} label={option === 'headteacher' ? 'Head Teacher' : option.charAt(0).toUpperCase() + option.slice(1)} active={accountRole === option} onPress={() => setAccountRole(option)} />)}</View>
+    <Field label="Full name" value={name} onChangeText={setName} autoCapitalize="words" placeholder="Student or staff name" /><Field label="Email address" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" placeholder="School email address" />
+    {accountRole === 'student' ? <><Field label="Grade level" value={gradeLevel} onChangeText={setGradeLevel} keyboardType="number-pad" placeholder="For example: 10" /><Heading title="Section" /><QueryStatus loading={sections.isPending} error={sections.error} retry={() => void sections.refetch()} /><View style={styles.chipRow}>{sections.data?.map(section => <Chip key={section.id} label={section.name} active={sectionId === section.id} onPress={() => setSectionId(section.id)} />)}</View><Heading title="Track / strand" /><View style={styles.chipRow}>{['STEM', 'HUMSS', 'ABM', 'TVL', 'GENERAL'].map(option => <Chip key={option} label={option} active={strand === option} onPress={() => setStrand(option)} />)}</View></> : <Field label="Department / teaching subject" value={department} onChangeText={setDepartment} placeholder="Use the school's configured department" />}
+    {create.error ? <Notice message={errorMessage(create.error)} tone="error" /> : null}<Button title="Create account" loading={create.isPending} disabled={!name.trim() || !email.trim()} onPress={() => create.mutate()} /><Button title="Cancel" disabled={create.isPending} variant="plain" onPress={onClose} />
+  </Card>;
+}
+
+export function AcademicScreen() {
+  const { user } = useAuth();
+  const role = user!.role;
+  const query = useQuery({ queryKey: ['academic', role], queryFn: () => edumatchApi.academic(role), staleTime: 30_000 });
+  return <Screen title="Academic monitoring" subtitle={role === 'student' ? 'Your school-reported progress and academic results.' : 'Review academic progress within your authorized school scope.'} refreshing={query.isRefetching} onRefresh={() => void query.refetch()}>
+    <Notice message="Academic results and grade calculations come from the school's official records." />
+    <QueryStatus loading={query.isPending} error={query.error} retry={() => void query.refetch()} />
+    {query.data?.map(item => <ItemCard key={item.id} item={item}><DetailFields row={item.raw} fields={[
+      { label: 'Average', keys: ['generalAverage', 'overallAverage', 'average', 'gradeAverage'] },
+      { label: 'Final grade', keys: ['finalGrade', 'grade', 'gradeValue'] }, { label: 'Students', keys: ['studentCount', 'totalStudents', 'studentsCount'] },
+      { label: 'Passed', keys: ['passed', 'passCount', 'passedCount'] }, { label: 'Needs attention', keys: ['failed', 'failCount', 'failedCount', 'riskLevel'] },
+      { label: 'Attendance', keys: ['attendanceRate'] }, { label: 'Progress', keys: ['progressPercent'] },
+    ]} /></ItemCard>)}
+    {query.isSuccess && !query.data.length ? <Empty title="No academic results yet" detail="Your school will publish academic progress here as records become available." /> : null}
+  </Screen>;
+}
+
+export function ApprovalsScreen() {
+  const { user } = useAuth();
+  const role = user!.role;
+  const client = useQueryClient();
+  const [selected, setSelected] = useState<Approval | null>(null);
+  const [note, setNote] = useState('');
+  const [confirmation, setConfirmation] = useState('');
+  const [message, setMessage] = useState('');
+  const canReview = role === 'admin' || role === 'teacher';
+  const query = useQuery({ queryKey: ['approvals', role], queryFn: () => edumatchApi.approvals(role), staleTime: 20_000 });
+  const review = useMutation({
+    mutationFn: (decision: 'approved' | 'rejected') => edumatchApi.reviewApproval(role, selected!, decision, note.trim() || undefined, confirmation.trim() || undefined),
+    onSuccess: async () => { setSelected(null); setNote(''); setConfirmation(''); setMessage('The request decision has been saved.'); await Promise.all([client.invalidateQueries({ queryKey: ['approvals'] }), client.invalidateQueries({ queryKey: ['dashboard'] }), client.invalidateQueries({ queryKey: ['subjects'] })]); },
+  });
+  function choose(item: Approval) { setSelected(item); setNote(''); setConfirmation(''); review.reset(); setMessage(''); }
+  function decide(decision: 'approved' | 'rejected') {
+    confirmAction(decision === 'approved' ? 'Approve this request?' : 'Reject this request?', selected?.title || '', decision === 'approved' ? 'Approve' : 'Reject', () => review.mutate(decision), decision === 'rejected');
+  }
+  return <Screen title={canReview ? 'Approvals' : 'Request status'} subtitle={canReview ? 'Review each request before making a decision.' : 'Track decisions on your authorized requests.'} refreshing={query.isRefetching} onRefresh={() => void query.refetch()}>
+    {message ? <Notice message={message} tone="success" /> : null}
+    <QueryStatus loading={query.isPending} error={query.error} retry={() => void query.refetch()} />
+    {selected ? <Card><Heading title="Review request" /><Text style={styles.heading}>{selected.title}</Text><Text style={styles.body}>{selected.subtitle}</Text>{selected.description ? <Text style={styles.body}>{selected.description}</Text> : null}
+      <DetailFields row={selected.raw} fields={[{ label: 'Request type', keys: ['action', 'requestType', 'type'] }, { label: 'Account', keys: ['studentEmail', 'email', 'requesterEmail'] }]} />
+      <Field label="Decision note" placeholder="Explain your decision (optional)" value={note} onChangeText={setNote} multiline />
+      {selected.kind === 'account' && selected.action === 'delete' ? <Field label="Type the student's email to confirm deletion" placeholder={selected.studentEmail || 'Student email address'} value={confirmation} onChangeText={setConfirmation} autoCapitalize="none" keyboardType="email-address" /> : null}
+      {review.error ? <Notice message={errorMessage(review.error)} tone="error" /> : null}
+      <View style={styles.row}><View style={{ flex: 1 }}><Button title="Approve" onPress={() => decide('approved')} loading={review.isPending} /></View><View style={{ flex: 1 }}><Button title="Reject" onPress={() => decide('rejected')} disabled={review.isPending} variant="danger" /></View></View>
+      <Button title="Close review" variant="plain" disabled={review.isPending} onPress={() => setSelected(null)} /></Card> : null}
+    {query.data?.map(item => <ItemCard key={`${item.kind}-${item.id}`} item={item}><Badge label={`${item.kind} request`} />{canReview && (!item.status || /pending|requested/i.test(item.status)) ? <Button title="Review request" variant="secondary" onPress={() => choose(item)} /> : null}</ItemCard>)}
+    {query.isSuccess && !query.data.length ? <Empty title="All caught up" detail="There are no requests to show." /> : null}
+  </Screen>;
+}
+
+export function GradesScreen() {
+  const { user } = useAuth();
+  const role = user!.role;
+  const client = useQueryClient();
+  const [selected, setSelected] = useState<ResourceItem | null>(null);
+  const [score, setScore] = useState('');
+  const [feedback, setFeedback] = useState('');
+  const [message, setMessage] = useState('');
+  const query = useQuery({ queryKey: ['grades', role], queryFn: () => edumatchApi.grades(role), staleTime: 20_000 });
+  const save = useMutation({
+    mutationFn: (action: 'grade' | 'return_for_revision') => edumatchApi.reviewGrade({ assessmentId: rawText(selected!.raw, ['assessmentId']), submissionId: selected!.id, action, gradeValue: action === 'grade' ? Number(score) : undefined, teacherFeedback: feedback.trim() || undefined }),
+    onSuccess: async () => { setMessage('Your review has been saved to the official grade record.'); setSelected(null); await Promise.all([client.invalidateQueries({ queryKey: ['grades'] }), client.invalidateQueries({ queryKey: ['academic'] })]); },
+  });
+  function select(item: ResourceItem) { setSelected(item); setScore(rawText(item.raw, ['gradeValue', 'score'])); setFeedback(rawText(item.raw, ['teacherFeedback'])); save.reset(); setMessage(''); }
+  return <Screen title="Grades & feedback" subtitle={role === 'teacher' ? 'Review submissions and save scores to EduMatch.' : 'Results and feedback from your official school records.'} refreshing={query.isRefetching} onRefresh={() => void query.refetch()}>
+    <Notice message="EduMatch calculates grades on the server using the school's grading rules." />
+    {message ? <Notice message={message} tone="success" /> : null}
+    <QueryStatus loading={query.isPending} error={query.error} retry={() => void query.refetch()} />
+    {selected ? <Card><Heading title="Review submission" /><Text style={styles.body}>{selected.title} · {selected.subtitle}</Text>
+      <DetailFields row={selected.raw} fields={[{ label: 'Available points', keys: ['activityPoints', 'totalPoints'] }, { label: 'Assessment', keys: ['assessmentMode'] }]} />
+      <Field label="Awarded points" value={score} onChangeText={setScore} placeholder="Enter the score" keyboardType="decimal-pad" />
+      <Field label="Teacher feedback" value={feedback} onChangeText={setFeedback} placeholder="Feedback is required when returning for revision" multiline />
+      {save.error ? <Notice message={errorMessage(save.error)} tone="error" /> : null}
+      <Button title="Save grade" loading={save.isPending} disabled={!score.trim() || !Number.isFinite(Number(score))} onPress={() => save.mutate('grade')} />
+      <Button title="Return for revision" variant="secondary" disabled={save.isPending || !feedback.trim()} onPress={() => save.mutate('return_for_revision')} />
+      <Button title="Close review" variant="plain" disabled={save.isPending} onPress={() => setSelected(null)} /></Card> : null}
+    {query.data?.map(item => <ItemCard key={item.id} item={item}><DetailFields row={item.raw} fields={[
+      { label: 'Student', keys: ['studentName'] }, { label: 'Subject', keys: ['subject', 'subjectName'] }, { label: 'Awarded points', keys: ['gradeValue', 'score'] },
+      { label: 'Available points', keys: ['activityPoints', 'totalPoints'] }, { label: 'Percentage', keys: ['percentage'] }, { label: 'Final grade', keys: ['finalGrade', 'grade'] },
+    ]} />
+      {role === 'teacher' && rawText(item.raw, ['assessmentId']) ? <Button title="Review submission" variant="secondary" onPress={() => select(item)} /> : null}</ItemCard>)}
+    {query.isSuccess && !query.data.length ? <Empty title="No grades yet" detail={role === 'teacher' ? 'Submitted assessments will appear here for review.' : 'Your published assessment results will appear here.'} /> : null}
+  </Screen>;
+}
+
+export function AnnouncementsScreen() {
+  const { user } = useAuth();
+  const role = user!.role;
+  const client = useQueryClient();
+  const canPublish = role !== 'student';
+  const [compose, setCompose] = useState(false);
+  const [target, setTarget] = useState('');
+  const [search, setSearch] = useState('');
+  const [title, setTitle] = useState('');
+  const [content, setContent] = useState('');
+  const [urgent, setUrgent] = useState(false);
+  const [message, setMessage] = useState('');
+  const requestId = useRef(`mobile-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  const query = useQuery({ queryKey: ['announcements', role], queryFn: () => edumatchApi.announcements(role), staleTime: 20_000 });
+  const targets = useQuery({ queryKey: ['announcement-targets', role], enabled: canPublish && compose,
+    queryFn: async () => role === 'teacher' ? (await edumatchApi.subjects(role)).map(s => ({ id: s.id, name: s.name, detail: s.className })) : (await edumatchApi.users(role, role === 'headteacher' ? { role: 'teacher' } : undefined)).map(u => ({ id: u.id, name: u.name, detail: u.email })),
+  });
+  const publish = useMutation({
+    mutationFn: () => edumatchApi.publishAnnouncement(role, target, { title: title.trim(), content: content.trim(), urgent, requestId: requestId.current }),
+    onSuccess: async () => { setMessage('Your message has been published.'); setCompose(false); setTitle(''); setContent(''); setTarget(''); setUrgent(false); requestId.current = `mobile-${Date.now()}-${Math.random().toString(36).slice(2)}`; await client.invalidateQueries({ queryKey: ['announcements'] }); },
+  });
+  const visibleTargets = targets.data?.filter(t => `${t.name} ${t.detail}`.toLowerCase().includes(search.toLowerCase())).slice(0, 30) || [];
+  return <Screen title="Announcements" subtitle="Stay connected with updates from your school." refreshing={query.isRefetching} onRefresh={() => void query.refetch()}>
+    {message ? <Notice message={message} tone="success" /> : null}
+    {canPublish && !compose ? <Button title={role === 'teacher' ? 'Publish to a subject' : 'Send a message'} icon="create-outline" onPress={() => { setCompose(true); publish.reset(); setMessage(''); }} /> : null}
+    {compose ? <Card><Heading title={role === 'teacher' ? 'Subject announcement' : 'New message'} /><Field label={role === 'teacher' ? 'Find a subject' : 'Find a recipient'} value={search} onChangeText={setSearch} placeholder="Search by name" />
+      <QueryStatus loading={targets.isPending} error={targets.error} retry={() => void targets.refetch()} />
+      <View style={styles.chipRow}>{visibleTargets.map(t => <Chip key={t.id} label={`${t.name}${t.detail ? ` · ${t.detail}` : ''}`} active={target === t.id} onPress={() => setTarget(t.id)} />)}</View>
+      {targets.isSuccess && !visibleTargets.length ? <Text style={styles.bodyMuted}>No matching recipients are available.</Text> : null}
+      <Field label="Title" value={title} onChangeText={setTitle} placeholder="Announcement title" maxLength={180} />
+      <Field label="Message" value={content} onChangeText={setContent} placeholder="Write your school update" multiline />
+      {role !== 'teacher' ? <Chip label={urgent ? 'Urgent message ✓' : 'Mark as urgent'} active={urgent} onPress={() => setUrgent(!urgent)} /> : null}
+      {publish.error ? <Notice message={errorMessage(publish.error)} tone="error" /> : null}
+      <Button title="Publish message" loading={publish.isPending} disabled={!target || !title.trim() || !content.trim()} onPress={() => publish.mutate()} />
+      <Button title="Cancel" disabled={publish.isPending} variant="plain" onPress={() => setCompose(false)} /></Card> : null}
+    <QueryStatus loading={query.isPending} error={query.error} retry={() => void query.refetch()} />
+    {query.data?.map(item => <ItemCard key={item.id} item={item} />)}
+    {query.isSuccess && !query.data.length ? <Empty title="No announcements yet" detail="School updates and subject messages will appear here." /> : null}
+  </Screen>;
+}
+
+export function NotificationsScreen() {
+  const client = useQueryClient();
+  const query = useQuery({ queryKey: ['notifications'], queryFn: () => notificationApi.list(), staleTime: 10_000 });
+  const mark = useMutation({ mutationFn: (id: string) => notificationApi.markViewed(id), onSuccess: () => client.invalidateQueries({ queryKey: ['notifications'] }) });
+  return <Screen title="Notifications" subtitle={query.data ? `${query.data.unreadCount} unread · Updates from your school` : 'Updates from your school'} refreshing={query.isRefetching} onRefresh={() => void query.refetch()}>
+    <QueryStatus loading={query.isPending} error={query.error} retry={() => void query.refetch()} />
+    {mark.error ? <Notice message={errorMessage(mark.error)} tone="error" /> : null}
+    {query.data?.notifications.map(item => <Card key={item.id}><View style={styles.between}><Text style={[styles.heading, { flex: 1 }]}>{item.title || item.subject || 'School update'}</Text><Badge label={item.urgent ? 'Urgent' : item.isViewed ? 'Read' : 'New'} /></View>
+      <Text style={styles.body}>{item.message || item.preview}</Text>{item.senderName ? <Text style={styles.bodyMuted}>From {item.senderName}</Text> : null}<Text style={styles.smallLabel}>{displayDate(item.createdAt)}</Text>
+      {!item.isViewed ? <Button title="Mark as read" variant="secondary" loading={mark.isPending && mark.variables === item.id} disabled={mark.isPending} onPress={() => mark.mutate(item.id)} /> : null}</Card>)}
+    {query.isSuccess && !query.data.notifications.length ? <Empty title="You're up to date" detail="New notifications will appear here." /> : null}
+  </Screen>;
+}

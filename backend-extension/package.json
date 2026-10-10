@@ -1,0 +1,12 @@
+{
+  "name": "@edumatch/mobile-backend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Additive Expo mobile APIs for the existing EduMatch Express backend",
+  "main": "index.js",
+  "type": "commonjs",
+  "engines": { "node": ">=20" },
+  "scripts": { "test": "node --test tests/*.test.js", "worker": "node scripts/push-worker.js" },
+  "peerDependencies": { "express": "^5.2.1" },
+  "devDependencies": { "@electric-sql/pglite": "0.4.3" }
+}
