@@ -2,9 +2,10 @@ import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 import * as Device from 'expo-device';
 import * as Crypto from 'expo-crypto';
+import type { DevicePushToken } from 'expo-notifications';
 import { api } from '../api/client';
 import { readSecure, writeSecure, deleteSecure } from '../auth/storage';
-import { getNotificationApi } from './runtime';
+import { getNotificationApi, pushRegistrationUnavailableReason, PUSH_UNAVAILABLE_MESSAGE } from './runtime';
 
 const INSTALLATION_KEY = 'edumatch.installation';
 const REGISTERED_KEY = 'edumatch.push-registration';
@@ -13,8 +14,9 @@ export async function installationId() {
   if (!id) { id = Crypto.randomUUID(); await writeSecure(INSTALLATION_KEY, id); }
   return id;
 }
-export async function registerDevice(requestPermission = false): Promise<string> {
-  if (Platform.OS === 'web') return 'Push notifications are available in the Android and iOS apps.';
+export async function registerDevice(requestPermission = false, devicePushToken?: DevicePushToken): Promise<string> {
+  const unavailable = pushRegistrationUnavailableReason();
+  if (unavailable) return unavailable;
   if (!Device.isDevice) return 'Use a physical device to enable push notifications.';
   const Notifications = getNotificationApi();
   if (!Notifications) return 'Use an EAS development build to enable push notifications.';
@@ -29,7 +31,16 @@ export async function registerDevice(requestPermission = false): Promise<string>
     await unregisterDevice();
     return 'Notifications are disabled. You can enable them in your device settings.';
   }
-  const { data: expoPushToken } = await Notifications.getExpoPushTokenAsync({ projectId });
+  let expoPushToken: string;
+  try {
+    ({ data: expoPushToken } = await Notifications.getExpoPushTokenAsync({ projectId, devicePushToken }));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (Platform.OS === 'android' && /Unable to get Firebase Messaging instance|Default FirebaseApp is not initialized/i.test(message)) {
+      return PUSH_UNAVAILABLE_MESSAGE;
+    }
+    throw error;
+  }
   const id = await installationId();
   await api.post('/mobile/devices', { installationId: id, expoPushToken, platform: Platform.OS, projectId });
   await writeSecure(REGISTERED_KEY, expoPushToken);

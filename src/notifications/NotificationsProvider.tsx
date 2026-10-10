@@ -1,20 +1,20 @@
 import { useEffect, type PropsWithChildren } from 'react';
 import { AppState } from 'react-native';
-import type { NotificationResponse } from 'expo-notifications';
+import type { DevicePushToken, NotificationResponse } from 'expo-notifications';
 import { router, type Href } from 'expo-router';
 import { useAuth } from '../auth/AuthProvider';
 import { queryClient } from '../query/QueryProvider';
 import { notificationRoute } from './routes';
 import { registerDevice } from './push';
-import { getNotificationApi } from './runtime';
+import { getNotificationApi, pushRegistrationUnavailableReason } from './runtime';
 
-const notifications = getNotificationApi();
+const notifications = pushRegistrationUnavailableReason() ? null : getNotificationApi();
 if (notifications) notifications.setNotificationHandler({ handleNotification: async () => ({ shouldShowBanner: true, shouldShowList: true, shouldPlaySound: false, shouldSetBadge: false }) });
 export function NotificationsProvider({ children }: PropsWithChildren) {
   const { user } = useAuth();
   useEffect(() => {
     if (!user || user.forcePasswordChange || !notifications) return;
-    const register = () => { void registerDevice().catch(() => { /* Account screen exposes registration status and retry. */ }); };
+    const register = (devicePushToken?: DevicePushToken) => { void registerDevice(false, devicePushToken).catch(() => { /* Account screen exposes registration status and retry. */ }); };
     register();
     const tap = (response: NotificationResponse) => {
       const route = notificationRoute(response.notification.request.content.data, user.role);

@@ -25,7 +25,7 @@ export function AccountScreen({ required = false }: { required?: boolean }) {
     finally { setBusy(false); }
   };
   const push = async () => {
-    setBusy(true); setFailure(null);
+    setBusy(true); setFailure(null); setMessage(null);
     try { setMessage(await registerDevice(true)); }
     catch (error) { setFailure(errorMessage(error)); }
     finally { setBusy(false); }

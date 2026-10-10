@@ -98,6 +98,8 @@ npm run start:dev
 
 Configure `EXPO_PUBLIC_API_URL` and `EXPO_PUBLIC_EAS_PROJECT_ID` in each EAS environment: `development`, `preview`, and `production`. Use EAS environment variables rather than relying on a gitignored local `.env` being uploaded. Android push requires `google-services.json`; provide its path with `GOOGLE_SERVICES_JSON` using an EAS file environment variable. Configure iOS APNs credentials using EAS credentials. Optional Firebase iOS configuration can be supplied through `GOOGLE_SERVICES_PLIST`.
 
+Android push is optional. Builds without Firebase configuration skip push registration and show a clear availability message when **Enable notifications** is tapped. School updates remain available through the app's **Notifications** screen and existing Supabase backend. A local `./google-services.json` is detected automatically; it must belong to Android package `com.edumatch.mobile` (or your `EXPO_ANDROID_PACKAGE` override). For cloud builds, upload it as the `GOOGLE_SERVICES_JSON` file variable in the profile's EAS environment. To deliver Android push alerts, also configure the Firebase FCM V1 service account under EAS Android credentials, then rebuild and reinstall the APK. The FCM service account private key belongs in EAS credentials, not in the app. See [Expo's Android push setup](https://docs.expo.dev/push-notifications/fcm-credentials/).
+
 `eas.json` includes physical development builds, an iOS simulator build, internal preview APKs, and production Android AAB/iOS builds with automatic version increments. Signing accounts, certificates, store identifiers, and submission credentials belong to the school.
 
 ```powershell

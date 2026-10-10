@@ -1,7 +1,10 @@
 import type { ConfigContext, ExpoConfig } from 'expo/config';
+import { existsSync } from 'node:fs';
 
 export default ({ config }: ConfigContext): ExpoConfig => {
   const projectId = process.env.EXPO_PUBLIC_EAS_PROJECT_ID || '16f46295-63ba-4cd3-89aa-7874be0a09e8';
+  const googleServicesFile = process.env.GOOGLE_SERVICES_JSON?.trim()
+    || (existsSync('./google-services.json') ? './google-services.json' : undefined);
   return {
     ...config,
     name: 'EduMatch',
@@ -21,7 +24,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     },
     android: {
       package: process.env.EXPO_ANDROID_PACKAGE || 'com.edumatch.mobile',
-      googleServicesFile: process.env.GOOGLE_SERVICES_JSON || undefined,
+      googleServicesFile,
       blockedPermissions: ['android.permission.RECORD_AUDIO'],
       predictiveBackGestureEnabled: true,
     },
@@ -40,7 +43,11 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       }],
     ],
     experiments: { typedRoutes: true },
-    extra: { ...(projectId ? { eas: { projectId } } : {}) },
+    extra: {
+      ...config.extra,
+      ...(projectId ? { eas: { projectId } } : {}),
+      notifications: { androidPushConfigured: !!googleServicesFile },
+    },
     web: { bundler: 'metro', output: 'single', favicon: './assets/edumatch-school-logo.png' },
   };
 };
