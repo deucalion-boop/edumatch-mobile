@@ -56,6 +56,7 @@ const {
   createStudentNotifications,
   safelyRunNotificationTask,
 } = require('../services/studentNotificationService');
+const { notifyLessonCreated, notifyAssessmentCreated } = require('../services/adminNotificationService');
 const {
   STRANDS,
   normalizeStrand,
@@ -65,7 +66,7 @@ const {
 } = require('../constants/strandSubjects');
 const { findActivitySubmissionById, updateActivityReview } = require('../services/supabaseActivityService');
 const { getSupabaseStorageClient } = require('../services/supabaseStorageService');
-const { syncStudentSubjectGradeRecords } = require('../services/supabaseGradeRecordService');
+const { computeAcademicProgress } = require('../services/supabaseAcademicProgressService');
 
 const asyncHandler = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 const CONTACT_NUMBER_REGEX = /^\+?[0-9()\-. ]{7,30}$/;
@@ -875,6 +876,7 @@ const createLesson = asyncHandler(async (req, res) => {
   }
 
   await safelyRunNotificationTask('new lesson', () => notifyLessonPublished({ lesson, publisher: req.user }));
+  await safelyRunNotificationTask('admin new lesson', () => notifyLessonCreated({ lesson, publisher: req.user }));
   return sendSuccess(res, 201, 'Lesson created successfully', {
     lesson: lessonToResponse(lesson, req),
   });
@@ -1021,6 +1023,10 @@ const copyTeacherLessonToClasses = asyncHandler(async (req, res) => {
     });
     createdLessons.push(copiedLesson);
     await safelyRunNotificationTask('copied lesson', () => notifyLessonPublished({
+      lesson: copiedLesson,
+      publisher: req.user,
+    }));
+    await safelyRunNotificationTask('admin copied lesson', () => notifyLessonCreated({
       lesson: copiedLesson,
       publisher: req.user,
     }));
@@ -1437,6 +1443,10 @@ const copyTeacherAssessmentToClasses = asyncHandler(async (req, res) => {
       assessment: copiedAssessment,
       publisher: req.user,
     }));
+    await safelyRunNotificationTask('admin copied assessment', () => notifyAssessmentCreated({
+      assessment: copiedAssessment,
+      publisher: req.user,
+    }));
   }
 
   return sendSuccess(res, 201, createdAssessments.length > 0
@@ -1738,6 +1748,7 @@ const createAssessment = asyncHandler(async (req, res) => {
   }
 
   await safelyRunNotificationTask('new assessment', () => notifyAssessmentAssigned({ assessment, publisher: req.user }));
+  await safelyRunNotificationTask('admin new assessment', () => notifyAssessmentCreated({ assessment, publisher: req.user }));
   const rejectedAttachments = [
     ...(Array.isArray(req.rejectedAssessmentAttachments) ? req.rejectedAssessmentAttachments : []),
     ...assessmentUploadResult.rejected,
@@ -2300,7 +2311,11 @@ const reviewActivitySubmission = asyncHandler(async (req, res) => {
   }
 
   if (action === 'grade' && String(assessment.assessmentMode || '').trim().toLowerCase() === 'grading_assessment') {
-    await syncStudentSubjectGradeRecords(submission.studentId);
+    try {
+      await computeAcademicProgress(submission.studentId);
+    } catch (error) {
+      console.error('[ACADEMIC PROGRESS] Unable to refresh after grading:', error?.message || error);
+    }
   }
 
   await safelyRunNotificationTask('activity review', () => createStudentNotifications({

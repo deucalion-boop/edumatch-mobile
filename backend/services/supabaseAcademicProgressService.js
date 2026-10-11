@@ -6,6 +6,8 @@ const { listStudentActivitySubmissions } = require('./supabaseActivityService');
 const { normalizeGradingPeriod } = require('../constants/assessmentConfig');
 const { buildSubjectGradeRecords, saveSubjectGradeRecords, latestGradeResults } = require('./supabaseGradeRecordService');
 const { buildRecommendationFromGradeRecords } = require('./recommendationService');
+const { findSupabaseAccount } = require('./supabaseAccountService');
+const { notifyRecommendationReady } = require('./adminNotificationService');
 
 const DEFAULT_WEIGHTS = { activity: 30, quiz: 30, exam: 40 };
 const FINAL_STATUSES = new Set(['completed', 'auto_submitted', 'terminated']);
@@ -181,7 +183,7 @@ async function computeAcademicProgress(studentId) {
   const totalRequired = visibleLessons.length + visibleAssessments.length;
   const totalCompleted = completedLessons + Object.values(completedByCategory).reduce((sum, value) => sum + value, 0);
 
-  return {
+  const academicProgress = {
     overallLearningProgress: {
       lessonsCompleted: completedLessons,
       activitiesCompleted: completedByCategory.activity,
@@ -205,6 +207,22 @@ async function computeAcademicProgress(studentId) {
       : 'More subject evidence is needed before EduMatch can identify a priority for improvement.',
     generatedAt: new Date().toISOString(),
   };
+
+  if (gradeRecommendation.isRecommendationReady === true
+    && gradeRecommendation.recommendationProgressPercent === 100
+    && String(gradeRecommendation.recommendedStrand?.name || '').trim()) {
+    try {
+      const student = await findSupabaseAccount('id', studentId);
+      await notifyRecommendationReady({
+        student,
+        academicProgress: { ...gradeRecommendation, ...academicProgress },
+      });
+    } catch (error) {
+      console.error('[NOTIFICATIONS] admin recommendation ready failed:', error?.message || error);
+    }
+  }
+
+  return academicProgress;
 }
 
 module.exports = {

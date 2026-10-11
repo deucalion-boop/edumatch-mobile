@@ -55,6 +55,7 @@ const {
   notifyLessonPublished,
   safelyRunNotificationTask,
 } = require('../services/studentNotificationService');
+const { notifyLessonCreated, notifyAssessmentCreated } = require('../services/adminNotificationService');
 
 const asyncHandler = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 const ALLOWED_ACCOUNT_STATUSES = ['pending', 'active', 'inactive', 'suspended'];
@@ -805,6 +806,7 @@ const createManagedTeacherLesson = asyncHandler(async (req, res) => {
     publishedBy: req.user._id,
   });
 
+  await safelyRunNotificationTask('admin managed teacher lesson', () => notifyLessonCreated({ lesson, publisher: req.user }));
   return sendSuccess(res, 201, 'Lesson created and assigned successfully', {
     lesson: headTeacherLessonToResponse(lesson, teacher),
   });
@@ -981,6 +983,7 @@ const createManagedTeacherAssessment = asyncHandler(async (req, res) => {
 
   const hydratedAssessment = { ...assessment, lessonId: lesson };
 
+  await safelyRunNotificationTask('admin managed teacher assessment', () => notifyAssessmentCreated({ assessment, publisher: req.user }));
   return sendSuccess(res, 201, 'Assessment created successfully', {
     assessment: headTeacherAssessmentToResponse(hydratedAssessment, teacher),
   });

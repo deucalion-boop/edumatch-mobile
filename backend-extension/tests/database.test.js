@@ -4,6 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { runInNewContext } = require('node:vm');
 let PGlite;
 try { ({ PGlite } = require('@electric-sql/pglite')); } catch { /* optional isolated DB dev dependency */ }
 
@@ -104,6 +105,69 @@ test('existing migrations + additive mobile SQL execute real PostgreSQL workflow
       await rejects("select public.mobile_register_device('qa-other','qa-installation-two','ExpoPushToken[qaabcdefghijk]','android','qa-project','qa-session-other')", '42501');
       const row = await one("select user_id,session_id,token_version from public.mobile_devices where installation_id='qa-installation-one'");
       assert.deepEqual(row,{user_id:'qa-teacher',session_id:'qa-session',token_version:0});
+    });
+    await t.test('admin creation and completed-recommendation alerts enqueue once and retain read/cleared state on retries', async () => {
+      await db.exec(`insert into public.users(id,name,email,username,role,status) values
+        ('qa-admin-alert','Admin Alerts','qa-admin-alert@example.com','qa-admin-alert','admin','active');
+        insert into public.sessions(id,user_id,token_id,expires_at) values
+        ('qa-admin-alert-session','qa-admin-alert','qa-admin-alert-token',now()+interval '1 day');`);
+      await rpc('public.mobile_register_device($1,$2,$3,$4,$5,$6)', [
+        'qa-admin-alert','qa-admin-alert-device','ExpoPushToken[qaAdminabcdefghijk]','android','qa-admin-alert-project','qa-admin-alert-session',
+      ]);
+
+      // Run the actual persistence service against PostgreSQL using the same
+      // insert-on-conflict behavior as Supabase's ignoreDuplicates upsert.
+      const client = { from(table) {
+        assert.equal(table, 'notifications');
+        return { upsert(rows, options) {
+          assert.equal(options.onConflict, 'recipient_id,recipient_role,type,event_key');
+          assert.equal(options.ignoreDuplicates, true);
+          return { async select(fields) {
+            assert.equal(fields, 'id');
+            const columns = Object.keys(rows[0]);
+            assert.ok(columns.every(column => /^[a-z_]+$/.test(column)));
+            const values = rows.flatMap(row => columns.map(column => column === 'meta' ? JSON.stringify(row[column]) : row[column]));
+            const placeholders = rows.map((_, index) => `(${columns.map((__, offset) => `$${index * columns.length + offset + 1}`).join(',')})`);
+            const result = await db.query(`insert into public.notifications (${columns.join(',')}) values ${placeholders.join(',')}
+              on conflict (recipient_id,recipient_role,type,event_key) do nothing returning id`, values);
+            return { data: result.rows, error: null };
+          } };
+        } };
+      } };
+      const module = { exports: {} };
+      runInNewContext(fs.readFileSync(path.resolve(__dirname, '../../backend/services/supabaseNotificationService.js'), 'utf8'), {
+        module, exports: module.exports, require(name) {
+          assert.equal(name, './supabaseStorageService');
+          return { getSupabaseStorageClient: () => client };
+        },
+      });
+      const { upsertNotifications } = module.exports;
+      const payloads = [
+        { type: 'lesson_created', eventKey: 'admin:lesson-created:qa-lesson', title: 'New lesson created', message: 'Teacher One created Biology Basics.', senderId: 'qa-teacher', meta: { route: '/admin/notifications', lessonId: 'qa-lesson' } },
+        { type: 'assessment_created', eventKey: 'admin:assessment-created:qa-assessment', title: 'New assessment created', message: 'Teacher One created Biology Quiz.', senderId: 'qa-teacher', meta: { route: '/admin/notifications', assessmentId: 'qa-assessment' } },
+        { type: 'student_recommendation_ready', eventKey: 'admin:recommendation-ready:qa-student', title: 'Student recommendation ready', message: 'Student One completed the required progress and received a STEM recommendation.', senderId: 'qa-student', meta: { route: '/admin/academic', studentId: 'qa-student' } },
+      ].map(payload => ({ recipientId: 'qa-admin-alert', recipientRole: 'admin', ...payload }));
+      assert.equal(await upsertNotifications(payloads), 3);
+      const stored = (await db.query("select id,type,meta,is_viewed,is_cleared from public.notifications where recipient_id='qa-admin-alert' order by type")).rows;
+      assert.deepEqual(stored.map(row => row.type), ['assessment_created','lesson_created','student_recommendation_ready']);
+      assert.ok(stored.every(row => !row.is_viewed && !row.is_cleared));
+      assert.equal(stored.find(row => row.type === 'student_recommendation_ready').meta.route, '/admin/academic');
+      const jobs = await rpc('public.mobile_claim_push_jobs($1,100)', ['qa-admin-alert-project']);
+      assert.equal(jobs.length, 3);
+      assert.deepEqual(jobs.map(job => job.notificationType).sort(), stored.map(row => row.type));
+      assert.ok(jobs.every(job => job.installation_id === 'qa-admin-alert-device' && job.attempts === 1));
+
+      await db.exec(`update public.notifications set is_viewed=true,viewed_at=now(),is_cleared=(type='lesson_created')
+        where recipient_id='qa-admin-alert' and type in ('lesson_created','assessment_created');
+        update public.mobile_push_jobs set status='delivered' where installation_id='qa-admin-alert-device';`);
+      const beforeRetry = (await db.query("select * from public.notifications where recipient_id='qa-admin-alert' order by type")).rows;
+      const recomputed = payloads.map(payload => payload.type === 'student_recommendation_ready'
+        ? { ...payload, message: 'Recommendation updated after a later recompute.', meta: { ...payload.meta, recommendationId: 'qa-recomputed' } }
+        : payload);
+      assert.equal(await upsertNotifications(recomputed), 0);
+      assert.deepEqual((await db.query("select * from public.notifications where recipient_id='qa-admin-alert' order by type")).rows, beforeRetry);
+      assert.deepEqual(await one("select count(*)::integer as count,count(*) filter (where status='delivered')::integer as delivered from public.mobile_push_jobs where installation_id='qa-admin-alert-device'"), { count: 3, delivered: 3 });
+      assert.deepEqual(await rpc('public.mobile_claim_push_jobs($1,100)', ['qa-admin-alert-project']), []);
     });
     await t.test('existing notifications enqueue one device job; active session filter blocks revocation', async () => {
       await db.exec("insert into public.notifications(id,recipient_id,recipient_role,title,message,subject,preview,event_key) values ('qa-notification','qa-teacher','teacher','School update','School update','School','School update','qa-event')");

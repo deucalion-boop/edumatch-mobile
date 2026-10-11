@@ -39,6 +39,9 @@ function buildSubjectGradeRecords({ studentId, subjects = [], assessments = [], 
 
   submissions.forEach((submission) => {
     if (!FINAL_STATUSES.has(String(submission?.status || '').trim().toLowerCase())) return;
+    const hasEssayEvaluation = Array.isArray(submission.aiEvaluations) && submission.aiEvaluations.length > 0;
+    const scoringStatus = String(submission.scoringStatus || '').trim().toLowerCase();
+    if (hasEssayEvaluation && !['teacher_approved', 'teacher_overridden'].includes(scoringStatus)) return;
     const assessment = gradingAssessments.get(cleanId(submission?.assessmentId));
     if (!assessment) return;
     const percentage = submissionPercentage(submission);
