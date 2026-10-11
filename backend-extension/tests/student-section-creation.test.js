@@ -11,6 +11,7 @@ const sectionConstants = require('../../backend/constants/sections');
 const backendRoot = join(__dirname, '../../backend');
 const controllerSource = readFileSync(join(backendRoot, 'controllers/adminController.js'), 'utf8');
 const sectionSource = readFileSync(join(backendRoot, 'services/sectionService.js'), 'utf8');
+const managementSource = readFileSync(join(backendRoot, 'services/userManagementService.js'), 'utf8');
 
 function loadModule(source, requireMock) {
   const module = { exports: {} };
@@ -18,13 +19,18 @@ function loadModule(source, requireMock) {
   return module.exports;
 }
 
-function createHarness({ sectionReadError } = {}) {
+function createHarness({ sectionReadError, existingHeadTeacher } = {}) {
   const inserts = [];
   const invites = [];
   const sectionQueries = [];
+  const departmentQueries = [];
   const events = [];
   const accounts = {
     async findSupabaseAccountByEmail() { return null; },
+    async findSupabaseHeadTeacherByDepartment(department) {
+      departmentQueries.push(department);
+      return existingHeadTeacher || null;
+    },
     async createSupabaseAccount(payload) {
       events.push('insert');
       inserts.push(payload);
@@ -63,13 +69,16 @@ function createHarness({ sectionReadError } = {}) {
     if (name === '../constants/userRoles') return userRoles;
     throw new Error(`Unexpected section dependency: ${name}`);
   });
+  const userManagementService = loadModule(managementSource, name => {
+    if (name === '../constants/userRoles') return userRoles;
+    return {};
+  });
   const controller = loadModule(controllerSource, name => {
     if (name === '../constants/userRoles') return userRoles;
     if (name === '../services/sectionService') return sectionService;
     if (name === '../services/supabaseAccountService') return accounts;
     if (name === '../services/userManagementService') return {
-      normalizeContactNumber: value => String(value || '').trim(),
-      applyRoleScopedFields: () => ({ subject: '', department: '' }),
+      ...userManagementService,
       async issueInviteForUser({ user }) { invites.push(user._id); return {}; },
     };
     if (name === '../utils/responseHelper') return {
@@ -88,7 +97,7 @@ function createHarness({ sectionReadError } = {}) {
     }, res, value => { error = value; });
     return { res, error };
   }
-  return { create, inserts, invites, sectionQueries, events };
+  return { create, inserts, invites, sectionQueries, departmentQueries, events };
 }
 
 const handlers = ['createUser', 'createAndInviteUser'];
@@ -151,7 +160,7 @@ test('Section storage failures propagate without partially creating an account',
 test('a Section in a staff payload does not create a student Section assignment', async () => {
   for (const handler of handlers) {
     const harness = createHarness();
-    const { error } = await harness.create(handler, { role: 'teacher', sectionId: 'inactive-section' }, 'secretary');
+    const { error } = await harness.create(handler, { role: 'teacher', department: 'Science', sectionId: 'inactive-section' }, 'secretary');
     assert.equal(error, undefined);
     assert.equal(harness.inserts[0].sectionId, undefined);
     assert.equal(harness.sectionQueries.length, 0);
@@ -175,5 +184,80 @@ test('required account fields still reject incomplete forms before Section looku
     assert.equal(error.statusCode, 400);
     assert.equal(harness.sectionQueries.length, 0);
     assert.equal(harness.inserts.length, 0);
+  }
+});
+
+test('student creation leaves strand unassigned even when a legacy payload supplies one', async () => {
+  for (const handler of handlers) {
+    for (const actorRole of ['admin', 'secretary']) {
+      for (const strand of ['STEM', 'ABM', 'legacy-strand']) {
+        const harness = createHarness();
+        const { res, error } = await harness.create(handler, { strand }, actorRole);
+        assert.equal(error, undefined);
+        assert.equal(res.statusCode, 201);
+        assert.equal(harness.inserts[0].strand, '');
+        assert.equal(harness.inserts[0].gradeLevel, 'Grade 10');
+      }
+    }
+  }
+});
+
+test('secretary creation succeeds without department and ignores stale department fields', async () => {
+  for (const handler of handlers) {
+    for (const department of [undefined, '', 'Science', 'Monitoring']) {
+      const harness = createHarness();
+      const { res, error } = await harness.create(handler, { role: 'secretary', department });
+      assert.equal(error, undefined);
+      assert.equal(res.statusCode, 201);
+      assert.equal(harness.inserts[0].department, '');
+      assert.equal(harness.inserts[0].subject, '');
+      assert.equal(harness.departmentQueries.length, 0);
+    }
+  }
+});
+
+test('teacher and head teacher creation persist the selected department', async () => {
+  for (const handler of handlers) {
+    for (const actorRole of ['admin', 'secretary']) {
+      for (const role of ['teacher', 'headteacher', 'head_teacher']) {
+        for (const department of userRoles.DEPARTMENTS) {
+          const harness = createHarness();
+          const { res, error } = await harness.create(handler, {
+            role, department: `  ${department.toLowerCase()}  `,
+          }, actorRole);
+          assert.equal(error, undefined);
+          assert.equal(res.statusCode, 201);
+          assert.equal(harness.inserts[0].department, department);
+          assert.equal(res.body.user.department, department);
+          assert.equal(harness.inserts[0].subject, role === 'teacher' ? department : '');
+        }
+      }
+    }
+  }
+});
+
+test('teacher and head teacher creation reject missing or unsupported departments before writes', async () => {
+  for (const handler of handlers) {
+    for (const role of ['teacher', 'headteacher']) {
+      for (const department of [undefined, '', '  ', 'Unsupported department']) {
+        const harness = createHarness();
+        const { error } = await harness.create(handler, { role, department });
+        assert.equal(error.statusCode, 400);
+        assert.equal(harness.inserts.length, 0);
+        assert.equal(harness.invites.length, 0);
+      }
+    }
+  }
+});
+
+test('head teacher creation still prevents duplicate heads for the selected department', async () => {
+  for (const handler of handlers) {
+    const harness = createHarness({ existingHeadTeacher: { _id: 'existing-head' } });
+    const { error } = await harness.create(handler, { role: 'headteacher', department: 'Science' });
+    assert.equal(error.statusCode, 409);
+    assert.equal(error.message, 'This department already has a Head Teacher assigned');
+    assert.deepEqual(harness.departmentQueries, ['Science']);
+    assert.equal(harness.inserts.length, 0);
+    assert.equal(harness.invites.length, 0);
   }
 });

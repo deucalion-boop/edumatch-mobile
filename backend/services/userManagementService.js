@@ -295,13 +295,14 @@ Login here: ${loginLink}`;
 function applyRoleScopedFields(userPayload) {
   const rawRole = String(userPayload?.role || '').trim().toLowerCase();
   const role = rawRole === 'head_teacher' ? ROLE_HEADTEACHER : rawRole;
-  const department = normalizeDepartment(userPayload?.department, {
-    required: role === ROLE_HEADTEACHER || role === ROLE_TEACHER,
-  });
+  const hasDepartment = role === ROLE_HEADTEACHER || role === ROLE_TEACHER;
+  const department = hasDepartment
+    ? normalizeDepartment(userPayload?.department, { required: true })
+    : '';
   const subject = normalizeTeacherSubject(userPayload?.subject || '');
 
   return {
-    department: role === ROLE_HEADTEACHER || role === ROLE_TEACHER ? department : '',
+    department,
     subject: role === ROLE_TEACHER ? (subject || department) : '',
   };
 }

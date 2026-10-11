@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react';
 import { Text, View } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../auth/AuthProvider';
+import { DEPARTMENTS } from '../auth/roles';
 import { isGradeTenStudent } from '../auth/studentAccess';
 import { edumatchApi, notificationApi } from '../api/edumatch';
 import type { Approval, ResourceItem, Role } from '../api/types';
@@ -71,7 +72,10 @@ function AccountCreator({ role, onClose, onSaved }: { role: Role; onClose: () =>
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
-  const [department, setDepartment] = useState('');
+  const [department, setDepartment] = useState(role === 'headteacher' ? user!.department || '' : '');
+  const needsDepartment = accountRole === 'headteacher' || accountRole === 'teacher';
+  const availableDepartments = DEPARTMENTS.filter(option => role !== 'headteacher' || option === user!.department);
+  const selectedDepartment = availableDepartments.find(option => option === department);
   const [gradeLevel, setGradeLevel] = useState('');
   const [sectionId, setSectionId] = useState('');
   const sections = useQuery({ queryKey: ['sections', role], queryFn: () => edumatchApi.sections(role), enabled: accountRole === 'student', staleTime: 60_000 });
@@ -79,8 +83,8 @@ function AccountCreator({ role, onClose, onSaved }: { role: Role; onClose: () =>
   const selectedSectionId = role === 'teacher' ? availableSections[0]?.id || '' : sectionId;
   const create = useMutation({ mutationFn: () => edumatchApi.createUser(role, {
     name: name.trim(), email: email.trim(), username: username.trim(), role: accountRole,
-    department: accountRole !== 'student' ? department.trim() || undefined : undefined,
-    subject: accountRole === 'teacher' ? department.trim() || undefined : undefined,
+    department: needsDepartment ? selectedDepartment : undefined,
+    subject: accountRole === 'teacher' ? selectedDepartment : undefined,
     gradeLevel: accountRole === 'student' && role !== 'teacher' && gradeLevel.trim() ? `Grade ${gradeLevel.trim()}` : undefined,
     sectionId: accountRole === 'student' ? selectedSectionId || undefined : undefined,
   }), onSuccess: onSaved });
@@ -93,8 +97,12 @@ function AccountCreator({ role, onClose, onSaved }: { role: Role; onClose: () =>
       <QueryStatus loading={sections.isPending} error={sections.error} retry={() => void sections.refetch()} />
       <View style={styles.chipRow}>{availableSections.map(section => <Chip key={section.id} label={section.name} active={selectedSectionId === section.id} onPress={() => setSectionId(section.id)} />)}</View>
       {sections.isSuccess && !availableSections.length ? <Notice message={role === 'teacher' ? 'You need an assigned advisory section before adding students.' : 'No active sections are available. Contact your school administrator.'} /> : null}
-    </> : <Field label="Department / teaching subject" value={department} onChangeText={setDepartment} placeholder="Use the school's configured department" />}
-    {create.error ? <Notice message={errorMessage(create.error)} tone="error" /> : null}<Button title="Create account" loading={create.isPending} disabled={!name.trim() || !email.trim() || !username.trim() || (accountRole === 'student' && (!selectedSectionId || !availableSections.some(section => section.id === selectedSectionId)))} onPress={() => create.mutate()} /><Button title="Cancel" disabled={create.isPending} variant="plain" onPress={onClose} />
+    </> : needsDepartment ? <>
+      <Heading title="Department" detail={role === 'headteacher' ? 'Teachers are assigned to your department.' : 'Select the department for this account.'} />
+      <View style={styles.chipRow}>{availableDepartments.map(option => <Chip key={option} label={option} active={selectedDepartment === option} onPress={() => setDepartment(option)} />)}</View>
+      {!availableDepartments.length ? <Notice message="Your account needs an assigned department before you can add teachers." /> : null}
+    </> : null}
+    {create.error ? <Notice message={errorMessage(create.error)} tone="error" /> : null}<Button title="Create account" loading={create.isPending} disabled={!name.trim() || !email.trim() || !username.trim() || (needsDepartment && !selectedDepartment) || (accountRole === 'student' && (!selectedSectionId || !availableSections.some(section => section.id === selectedSectionId)))} onPress={() => create.mutate()} /><Button title="Cancel" disabled={create.isPending} variant="plain" onPress={onClose} />
   </Card>;
 }
 

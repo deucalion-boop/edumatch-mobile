@@ -902,7 +902,7 @@ const getAuditLogs = asyncHandler(async (req, res) => {
 });
 
 const createAndInviteUser = asyncHandler(async (req, res) => {
-  const { name, email, username, role, contactNumber, department, subject, strand, gradeLevel, sectionId } = req.body || {};
+  const { name, email, username, role, contactNumber, department, subject, gradeLevel, sectionId } = req.body || {};
 
   if (!name || !email || !username || !role) {
     const error = new Error('name, email, username, and role are required');
@@ -929,7 +929,7 @@ const createAndInviteUser = asyncHandler(async (req, res) => {
   ensureUserManagementPermission(req, normalizedRole);
   const normalizedContactNumber = normalizeContactNumber(contactNumber);
   const scopedFields = applyRoleScopedFields({ role: normalizedRole, department, subject });
-  const studentFields = normalizeStudentFields({ role: normalizedRole, strand, gradeLevel });
+  const studentFields = normalizeStudentFields({ role: normalizedRole, gradeLevel });
   const studentSectionId = await resolveStudentSectionId(normalizedRole, sectionId);
   await ensureSingleHeadTeacherPerDepartment({
     role: normalizedRole,
@@ -991,7 +991,6 @@ const createUser = asyncHandler(async (req, res) => {
     contactNumber,
     department,
     subject,
-    strand,
     gradeLevel,
     sectionId,
   } = req.body;
@@ -1015,7 +1014,7 @@ const createUser = asyncHandler(async (req, res) => {
   const normalizedUsername = String(username).trim();
   const normalizedContactNumber = normalizeContactNumber(contactNumber);
   const scopedFields = applyRoleScopedFields({ role: normalizedRole, department, subject });
-  const studentFields = normalizeStudentFields({ role: normalizedRole, strand, gradeLevel });
+  const studentFields = normalizeStudentFields({ role: normalizedRole, gradeLevel });
   const studentSectionId = await resolveStudentSectionId(normalizedRole, sectionId);
   await ensureSingleHeadTeacherPerDepartment({
     role: normalizedRole,
