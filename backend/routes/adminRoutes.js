@@ -21,6 +21,7 @@ const {
   clearSystemCache,
   getRawSettingsDebug,
   getAnalytics,
+  getAiUsage,
 } = require('../controllers/adminController');
 const { getAdminAttendanceReport } = require('../controllers/attendanceController');
 const { getSectionDirectory } = require('../controllers/sectionController');
@@ -45,6 +46,7 @@ router.get('/student-account-requests', getStudentAccountRequests);
 router.patch('/student-account-requests/:id/review', reviewStudentAccountRequest);
 router.post('/users/:id/send-invite', inviteLimiter, sendUserInvite);
 router.get('/analytics', getAnalytics);
+router.get('/ai-usage', getAiUsage);
 router.get('/attendance/report', getAdminAttendanceReport);
 router.get('/sections', getSectionDirectory);
 router.get('/settings/security', getSecuritySettings);

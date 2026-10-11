@@ -4,15 +4,16 @@ import { isGradeTenStudent } from '../auth/studentAccess';
 export const roleNames: Record<Role, string> = {
   admin: 'Admin / Principal', secretary: 'Secretary', headteacher: 'Head Teacher', teacher: 'Teacher', student: 'Student',
 };
-export type Feature = 'approvals' | 'academic' | 'attendance' | 'grades' | 'subjects' | 'lessons' | 'records' | 'announcements' | 'notifications';
+export type Feature = 'approvals' | 'academic' | 'ai-usage' | 'attendance' | 'grades' | 'subjects' | 'lessons' | 'records' | 'announcements' | 'notifications';
 export const featureNames: Record<Feature, string> = {
-  approvals: 'Approvals', academic: 'Academic monitoring', attendance: 'Attendance', grades: 'Grades & feedback',
+  approvals: 'Approvals', academic: 'Academic monitoring', 'ai-usage': 'AI assessment analytics', attendance: 'Attendance', grades: 'Grades & feedback',
   subjects: 'Subjects', lessons: 'Lessons & activities', records: 'User Management', announcements: 'Announcements', notifications: 'Notifications',
 };
 export const roleFeatures: Record<Role, { feature: Feature; detail: string; icon: string }[]> = {
   admin: [
     { feature: 'approvals', detail: 'Review account and export requests', icon: 'checkmark-done-outline' },
     { feature: 'academic', detail: 'Monitor school academic performance', icon: 'stats-chart-outline' },
+    { feature: 'ai-usage', detail: 'Track AI usage when creating assessments', icon: 'sparkles-outline' },
     { feature: 'records', detail: 'Create and manage school user accounts', icon: 'folder-open-outline' },
     { feature: 'attendance', detail: 'Review school attendance records', icon: 'calendar-outline' },
     { feature: 'announcements', detail: 'Send school messages', icon: 'megaphone-outline' },

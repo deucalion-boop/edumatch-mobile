@@ -4,6 +4,7 @@ import { FEATURES } from '../auth/roles';
 import { AcademicScreen, ApprovalsScreen, GradesScreen, NotificationsScreen } from '../screens/ResourceScreens';
 import { AttendanceScreen } from '../screens/AttendanceScreen';
 import { SubjectsScreen, LessonsScreen } from '../screens/LearningScreens';
+import { AiUsageScreen } from '../screens/AiUsageScreen';
 
 export function FeatureScreen() {
   const { user } = useAuth();
@@ -12,6 +13,7 @@ export function FeatureScreen() {
   switch (feature) {
     case 'approvals': return <ApprovalsScreen />;
     case 'academic': return <AcademicScreen />;
+    case 'ai-usage': return <AiUsageScreen />;
     case 'grades': return <GradesScreen />;
     case 'attendance': return <AttendanceScreen />;
     case 'subjects': return <SubjectsScreen />;

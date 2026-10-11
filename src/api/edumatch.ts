@@ -1,7 +1,7 @@
 import { api } from './client';
 import { isGradeTenStudent } from '../auth/studentAccess';
 import type {
-  ActivityResponseInput, Approval, Assessment, AssessmentWeights, Attachment,
+  ActivityResponseInput, AiCreatorRole, AiUsageAnalytics, AiUsageDays, Approval, Assessment, AssessmentWeights, Attachment,
   AttendanceFilters, AttendanceOverview, AttendanceRecord, AttendanceRoster,
   AttendanceScanResult, AttendanceSession, AttendanceSessionDetail, AttendanceSessionQr,
   AttendanceStatus, AuthSession, CreateAttendanceSessionInput, CreateUserInput,
@@ -131,6 +131,50 @@ function approvalItem(row: DataRow, kind: Approval['kind']): Approval {
 }
 function ensureRole(role: Role, allowed: Role[]): void {
   if (!allowed.includes(role)) throw new Error('This action is unavailable for your role.');
+}
+
+function aiCreatorRole(value: unknown): AiCreatorRole {
+  const role = normalizeRole(value);
+  if (role !== 'teacher' && role !== 'headteacher') throw new Error('The server returned an invalid AI creator role.');
+  return role;
+}
+
+function optionalAiCount(value: unknown): number | undefined {
+  if (typeof value !== 'number' && (typeof value !== 'string' || !value.trim())) return undefined;
+  const count = Number(value);
+  return Number.isSafeInteger(count) && count >= 0 ? count : undefined;
+}
+
+function aiCount(value: unknown): number {
+  const count = optionalAiCount(value);
+  if (count === undefined) throw new Error('The server returned an invalid AI usage count.');
+  return count;
+}
+
+function aiUsageAnalytics(value: unknown): AiUsageAnalytics {
+  const data = object(value);
+  const summary = object(data.summary);
+  const period = object(data.period);
+  const pagination = object(data.pagination);
+  if (!Object.keys(summary).length || !Object.keys(pagination).length || ![7, 30, 90].includes(number(period.days))) {
+    throw new Error('The server returned an invalid AI usage response.');
+  }
+  const counts = (row: DataRow) => ({ requests: aiCount(row.requests), successfulDrafts: aiCount(row.successfulDrafts), failedRequests: aiCount(row.failedRequests) });
+  return {
+    period: { days: number(period.days) as AiUsageDays, start: string(period.start), end: string(period.end) },
+    summary: { ...counts(summary), activeCreators: aiCount(summary.activeCreators), localFallbacks: aiCount(summary.localFallbacks) },
+    trend: rows(data, 'trend').map(row => ({ date: string(row.date), ...counts(row) })),
+    creators: rows(data, 'creators').map(row => ({ id: id(row), name: string(row.name), role: aiCreatorRole(row.role),
+      department: string(row.department) || undefined, ...counts(row) })),
+    recent: rows(data, 'recent').map(row => ({ id: id(row), creatorId: string(row.creatorId), creatorName: string(row.creatorName),
+      creatorRole: aiCreatorRole(row.creatorRole), createdAt: string(row.createdAt), succeeded: row.succeeded === true, durationMs: number(row.durationMs),
+      provider: string(row.provider) || undefined, model: string(row.model) || undefined, subject: string(row.subject) || undefined,
+      generationMode: string(row.generationMode) || undefined,
+      requestedQuestions: optionalAiCount(row.requestedQuestions),
+      generatedQuestions: optionalAiCount(row.generatedQuestions),
+      providerRequests: optionalAiCount(row.providerRequests) })),
+    pagination: { page: aiCount(pagination.page), pageSize: aiCount(pagination.pageSize), totalPages: aiCount(pagination.totalPages), totalRecords: aiCount(pagination.totalRecords) },
+  };
 }
 function filterItems<T extends { raw?: DataRow; name?: string; role?: Role; status?: string }>(items: T[], filters?: ListFilters): T[] {
   if (!filters) return items;
@@ -380,6 +424,11 @@ export const edumatchApi = {
   async lockAttendance(recordId: string): Promise<AttendanceRecord> {
     return attendanceRecord(object((await patch(`/teacher/attendance/${encoded(recordId)}/lock`)).record));
   },
+  async aiUsage(role: Role, options: { days?: AiUsageDays; page?: number; pageSize?: number } = {}): Promise<AiUsageAnalytics> {
+    ensureRole(role, ['admin']);
+    const data = await get('/admin/ai-usage', { days: options.days ?? 30, page: options.page ?? 1, pageSize: options.pageSize ?? 5 });
+    return aiUsageAnalytics(data.aiUsage);
+  },
   async dashboard(role: Role, user?: User): Promise<Dashboard> {
     if (role === 'admin') {
       const data = await get('/admin/analytics');
@@ -395,25 +444,25 @@ export const edumatchApi = {
       const students = rows(data, 'students');
       return { metrics: [{ label: 'Students', value: students.length }, { label: 'Attendance records', value: number(attendance.summary.totalRecords) },
         { label: 'Present', value: number(attendance.summary.presentCount) }, { label: 'Absent', value: number(attendance.summary.absentCount) }],
-        activity: students.slice(0, 5).map(userItem) };
+        activity: students.map(userItem) };
     }
     if (role === 'headteacher') {
       const data = await get('/headteacher/teachers'); const summary = object(data.summary);
       return { metrics: [{ label: 'Teachers', value: number(summary.totalTeachers) }, { label: 'Students', value: number(summary.totalStudents) },
         { label: 'Lessons', value: number(summary.totalLessons) }, { label: 'Assessments', value: number(summary.totalAssessments) }],
-        activity: rows(data, 'teachers').slice(0, 5).map(userItem) };
+        activity: rows(data, 'teachers').map(userItem) };
     }
     if (role === 'teacher') {
       const [subjects, students, requests] = await Promise.all([this.subjects(role), this.users(role), this.approvals(role)]);
       return { metrics: [{ label: 'Classes', value: subjects.length }, { label: 'Students', value: students.length },
         { label: 'Enrollment requests', value: requests.length }, { label: 'Lessons', value: subjects.reduce((sum, row) => sum + number(row.lessonCount), 0) }],
-        activity: requests.slice(0, 5) };
+        activity: requests };
     }
     const attendance = await this.attendance(role);
     const subjects = user && !isGradeTenStudent(user) ? [] : await this.subjects(role);
     return { metrics: [{ label: 'Classes', value: subjects.filter(item => item.enrollmentStatus !== 'pending').length }, { label: 'Attendance records', value: number(attendance.summary.totalRecords) },
       { label: 'Present', value: number(attendance.summary.presentCount) }, { label: 'Late', value: number(attendance.summary.lateCount) }],
-      activity: attendance.records.slice(0, 5).map(row => ({ id: row.id, title: row.title || string(row.subject?.name) || 'Attendance',
+      activity: attendance.records.map(row => ({ id: row.id, title: row.title || string(row.subject?.name) || 'Attendance',
         subtitle: row.dateKey, status: row.status, raw: row })) };
   },
   async auditLogs(filters?: ListFilters & { category?: string; method?: string; result?: string }): Promise<Paginated<DataRow>> {

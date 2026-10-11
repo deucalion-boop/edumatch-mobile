@@ -14,7 +14,7 @@ export function normalizeRole(value: unknown): Role {
 }
 export function homeForRole(role: Role) { return `/${role}` as const; }
 export const FEATURES: Record<Role, readonly string[]> = {
-  admin: ['approvals', 'academic', 'subjects', 'attendance', 'notifications'],
+  admin: ['approvals', 'academic', 'ai-usage', 'subjects', 'attendance', 'notifications'],
   secretary: ['approvals', 'subjects', 'attendance', 'notifications'],
   headteacher: ['academic', 'grades', 'lessons', 'attendance', 'notifications'],
   teacher: ['approvals', 'grades', 'subjects', 'lessons', 'attendance', 'notifications'],

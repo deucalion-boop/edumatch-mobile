@@ -515,6 +515,18 @@ const generateAssessmentWithAi = asyncHandler(async (req, res) => {
   const aiConfig = getAiRuntimeConfig();
   const configurationStatus = getAiConfigurationStatus(aiConfig);
 
+  const aiGeneration = {
+    provider: aiConfig.provider || 'custom',
+    model: aiConfig.model || '',
+    subject: String(subject || '').trim(),
+    department: String(req.user?.department || '').trim(),
+    difficulty: String(difficulty || '').trim(),
+    examType: String(examType || '').trim(),
+    requestedQuestions: Number(numberOfItems),
+    providerRequests: 0,
+  };
+  req.auditLogContext = { ...(req.auditLogContext || {}), aiGeneration };
+
   if (!aiConfig.isEnabled) {
     const error = new Error('AI generator is currently disabled by server configuration.');
     error.statusCode = 403;
@@ -545,6 +557,7 @@ const generateAssessmentWithAi = asyncHandler(async (req, res) => {
 
   const normalizedTopic = String(topic || '').trim();
   const normalizedSubject = String(subject || lesson?.subject || selectedClass?.name || ownerTeacher?.subject || ownerTeacher?.department || '').trim();
+  aiGeneration.subject = normalizedSubject;
   if (!normalizedSubject) {
     const error = new Error('subject is required');
     error.statusCode = 400;
@@ -640,6 +653,9 @@ ${extractedText.slice(0, 15000)}`;
   let sanitizedQuestions = [];
 
   try {
+    aiGeneration.generationMode = generationMode;
+    // Count application generation and repair calls; SDK retries are not separate drafts.
+    aiGeneration.providerRequests += 1;
     const rawOutput = await requestAiOutput({ config: aiConfig, prompt });
     const targetCount = Number(numberOfItems);
     let parsed = parseJsonPayload(rawOutput);
@@ -664,6 +680,7 @@ Return exactly:
 Keep exactly ${targetCount} questions.
 Draft:
 ${String(rawOutput || '').slice(0, 12000)}`;
+      aiGeneration.providerRequests += 1;
       repairedOutput = await requestAiOutput({ config: aiConfig, prompt: repairPrompt });
       parsed = parseJsonPayload(repairedOutput);
     }
@@ -735,6 +752,8 @@ ${String(rawOutput || '').slice(0, 12000)}`;
     title: normalizedTitle,
     lessonTrack: lesson?.track || selectedClass?.track || ownerTeacher?.strand || '',
   });
+  aiGeneration.generationMode = generationMode;
+  aiGeneration.generatedQuestions = sanitizedQuestions.length;
 
   return sendSuccess(res, 200, 'Assessment draft generated successfully', {
     draftAssessment: {

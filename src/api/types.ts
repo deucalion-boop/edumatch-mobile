@@ -95,6 +95,45 @@ export interface Dashboard {
   activity: ResourceItem[];
 }
 
+export type AiUsageDays = 7 | 30 | 90;
+export type AiCreatorRole = 'teacher' | 'headteacher';
+export interface AiUsageCounts {
+  requests: number;
+  successfulDrafts: number;
+  failedRequests: number;
+}
+export interface AiUsageTrend extends AiUsageCounts { date: string }
+export interface AiUsageCreator extends AiUsageCounts {
+  id: string;
+  name: string;
+  role: AiCreatorRole;
+  department?: string;
+}
+export interface AiUsageGeneration {
+  id: string;
+  creatorId: string;
+  creatorName: string;
+  creatorRole: AiCreatorRole;
+  createdAt: string;
+  succeeded: boolean;
+  durationMs: number;
+  provider?: string;
+  model?: string;
+  subject?: string;
+  generationMode?: string;
+  requestedQuestions?: number;
+  generatedQuestions?: number;
+  providerRequests?: number;
+}
+export interface AiUsageAnalytics {
+  period: { days: AiUsageDays; start: string; end: string };
+  summary: AiUsageCounts & { activeCreators: number; localFallbacks: number };
+  trend: AiUsageTrend[];
+  creators: AiUsageCreator[];
+  recent: AiUsageGeneration[];
+  pagination: { page: number; pageSize: number; totalPages: number; totalRecords: number };
+}
+
 export interface Approval extends ResourceItem {
   kind: 'export' | 'account' | 'enrollment';
   action?: string;

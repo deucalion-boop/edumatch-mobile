@@ -30,6 +30,7 @@ const {
 const { createAdminMessageNotification } = require('../services/notificationService');
 const { countUnreadNotifications } = require('../services/supabaseNotificationService');
 const { getSupabaseAnalytics } = require('../services/supabaseAnalyticsService');
+const { getSupabaseAiUsage } = require('../services/supabaseAiUsageService');
 const { listLoginAttempts, revokeNonAdminSessions } = require('../services/supabaseAuthPersistenceService');
 const { listAuditLogs } = require('../services/supabaseAuditLogService');
 const {
@@ -2036,6 +2037,15 @@ const getAnalytics = asyncHandler(async (_req, res) => {
   return sendSuccess(res, 200, 'Analytics fetched successfully', payload);
 });
 
+const getAiUsage = asyncHandler(async (req, res) => {
+  const payload = await getSupabaseAiUsage({
+    days: req.query?.days,
+    page: req.query?.page,
+    pageSize: req.query?.pageSize,
+  });
+  return sendSuccess(res, 200, 'AI assessment usage fetched successfully', payload);
+});
+
 const sendUserMessage = asyncHandler(async (req, res) => {
   const recipientId = String(req.params.id || '').trim();
   if (!recipientId) {
@@ -2238,4 +2248,5 @@ module.exports = {
   clearSystemCache,
   getRawSettingsDebug,
   getAnalytics,
+  getAiUsage,
 };

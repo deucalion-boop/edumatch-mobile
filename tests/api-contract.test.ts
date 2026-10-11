@@ -7,19 +7,34 @@ import type { Approval, CreateUserInput, Role } from '../src/api/types';
 process.env.EXPO_PUBLIC_API_URL = 'http://127.0.0.1:5099/api';
 Object.defineProperty(globalThis, '__DEV__', { value: true, configurable: true });
 const modules = Promise.all([import('../src/api/client'), import('../src/api/edumatch')]);
-type CapturedRequest = { method: string; url: string; body: unknown; authorization: unknown };
+type CapturedRequest = { method: string; url: string; body: unknown; authorization: unknown; params?: unknown };
 async function transport(handler: (request: CapturedRequest) => unknown) {
   const [{ api, setAccessToken }, endpoints] = await modules;
   const captured: CapturedRequest[] = [];
   api.defaults.adapter = async (config: InternalAxiosRequestConfig): Promise<AxiosResponse> => {
     const request = { method: config.method || 'get', url: config.url || '',
       body: typeof config.data === 'string' ? JSON.parse(config.data) : config.data,
-      authorization: config.headers.Authorization };
+      authorization: config.headers.Authorization,
+      ...(config.params === undefined ? {} : { params: config.params }) };
     captured.push(request);
     return { data: handler(request), status: 200, statusText: 'OK', headers: {}, config };
   };
   setAccessToken(null);
   return { captured, setAccessToken, ...endpoints };
+}
+
+function aiUsageFixture() {
+  return {
+    period: { days: 30, start: '2026-09-12T00:00:00Z', end: '2026-10-11T23:59:59Z' },
+    summary: { requests: 12, successfulDrafts: 9, failedRequests: 3, activeCreators: 2, localFallbacks: 1 },
+    trend: [{ date: '2026-10-11', requests: 4, successfulDrafts: 3, failedRequests: 1 }],
+    creators: [{ id: 'teacher-1', name: 'Science Teacher', role: 'teacher', department: 'Science',
+      requests: 8, successfulDrafts: 6, failedRequests: 2 }],
+    recent: [{ id: 'ai-event-1', creatorId: 'teacher-1', creatorName: 'Science Teacher', creatorRole: 'teacher',
+      createdAt: '2026-10-11T03:00:00Z', succeeded: true, durationMs: 2500, provider: 'openai', model: 'assessment-model',
+      subject: 'Science', generationMode: 'assessment', requestedQuestions: 10, generatedQuestions: 10, providerRequests: 2 }],
+    pagination: { page: 2, pageSize: 5, totalPages: 3, totalRecords: 12 },
+  };
 }
 
 test('login preserves OTP timing and verifies a fresh CAPTCHA before accepting the server role', async () => {
@@ -69,6 +84,86 @@ test('unsupported role operations fail before making a request', async () => {
   const approval: Approval = { id: 'request-1', title: 'Export', subtitle: '', kind: 'export', raw: {} };
   await assert.rejects(() => edumatchApi.reviewApproval('secretary', approval, 'approved'), /unavailable for your role/);
   assert.equal(captured.length, 0);
+});
+
+test('AI usage analytics preserve authenticated server metrics and serialize each date range and page', async () => {
+  const aiUsage = aiUsageFixture();
+  const { edumatchApi, captured, setAccessToken } = await transport(() => ({ success: true, aiUsage }));
+  setAccessToken('admin-jwt');
+  for (const days of [7, 30, 90] as const) {
+    const result = await edumatchApi.aiUsage('admin', { days, page: 2, pageSize: 5 });
+    assert.deepEqual(result, aiUsage);
+    assert.deepEqual(captured.at(-1), { method: 'get', url: '/admin/ai-usage', body: undefined,
+      authorization: 'Bearer admin-jwt', params: { days, page: 2, pageSize: 5 } });
+  }
+});
+
+test('AI usage analytics use the default range and reject non-admin roles before transport', async () => {
+  const { edumatchApi, captured } = await transport(() => ({ success: true, aiUsage: aiUsageFixture() }));
+  for (const role of ['secretary', 'headteacher', 'teacher', 'student'] as const) {
+    await assert.rejects(() => edumatchApi.aiUsage(role), /unavailable for your role/);
+  }
+  assert.equal(captured.length, 0);
+  await edumatchApi.aiUsage('admin');
+  assert.deepEqual(captured[0]?.params, { days: 30, page: 1, pageSize: 5 });
+});
+
+test('AI usage analytics retain only approved fields and omit absent optional metadata', async () => {
+  const clean = aiUsageFixture();
+  const minimalEvent = { id: 'ai-event-2', creatorId: 'headteacher-1', creatorName: 'Science Head',
+    creatorRole: 'headteacher', createdAt: '2026-10-11T04:00:00Z', succeeded: false, durationMs: 1200 };
+  const { edumatchApi } = await transport(() => ({ success: true, aiUsage: {
+    ...clean, apiKey: 'private-provider-key',
+    summary: { ...clean.summary, costEstimate: 99 },
+    creators: clean.creators.map(row => ({ ...row, email: 'private@example.test', password: 'private-hash' })),
+    recent: [{ ...minimalEvent, prompt: 'private lesson text', responseBody: 'private generated questions' }],
+  } }));
+  const result = await edumatchApi.aiUsage('admin');
+  assert.deepEqual(JSON.parse(JSON.stringify(result)), { ...clean, recent: [minimalEvent] });
+});
+
+test('AI usage analytics expose genuine zero usage rather than manufacturing history', async () => {
+  const aiUsage = { ...aiUsageFixture(), summary: {
+    requests: 0, successfulDrafts: 0, failedRequests: 0, activeCreators: 0, localFallbacks: 0 },
+    trend: [], creators: [], recent: [], pagination: { page: 1, pageSize: 5, totalPages: 1, totalRecords: 0 } };
+  const { edumatchApi } = await transport(() => ({ success: true, aiUsage }));
+  assert.deepEqual(await edumatchApi.aiUsage('admin'), aiUsage);
+});
+
+test('AI usage analytics omit invalid optional request metadata rather than display fabricated values', async () => {
+  const clean = aiUsageFixture();
+  const event = { id: 'ai-event-1', creatorId: 'teacher-1', creatorName: 'Science Teacher', creatorRole: 'teacher',
+    createdAt: '2026-10-11T03:00:00Z', succeeded: true, durationMs: 2500 };
+  const { edumatchApi } = await transport(() => ({ success: true, aiUsage: { ...clean,
+    recent: [{ ...event, provider: 42, model: [], subject: {}, generationMode: false,
+      requestedQuestions: 'unknown', generatedQuestions: 'unknown', providerRequests: 'unknown' }],
+  } }));
+  assert.deepEqual(JSON.parse(JSON.stringify(await edumatchApi.aiUsage('admin'))), { ...clean, recent: [event] });
+});
+
+test('malformed AI usage analytics fail visibly instead of returning zero totals', async () => {
+  const invalidUsage = [undefined, null, [],
+    { ...aiUsageFixture(), summary: undefined },
+    { ...aiUsageFixture(), summary: [] },
+    { ...aiUsageFixture(), pagination: undefined },
+    { ...aiUsageFixture(), pagination: [] },
+    ...['trend', 'creators', 'recent'].map(key => ({ ...aiUsageFixture(), [key]: null })),
+  ];
+  for (const aiUsage of invalidUsage) {
+    const { edumatchApi } = await transport(() => ({ success: true, aiUsage }));
+    await assert.rejects(() => edumatchApi.aiUsage('admin'), /invalid/i);
+  }
+});
+
+test('AI usage analytics reject unsupported creator roles in creator summaries and recent events', async () => {
+  for (const collection of ['creators', 'recent'] as const) {
+    const aiUsage = aiUsageFixture();
+    const invalid = collection === 'creators'
+      ? { ...aiUsage, creators: aiUsage.creators.map(row => ({ ...row, role: 'admin' })) }
+      : { ...aiUsage, recent: aiUsage.recent.map(row => ({ ...row, creatorRole: 'student' })) };
+    const { edumatchApi } = await transport(() => ({ success: true, aiUsage: invalid }));
+    await assert.rejects(() => edumatchApi.aiUsage('admin'), /invalid|role/i);
+  }
 });
 
 test('account creation requires username before sending requests for every creator role', async () => {
@@ -127,6 +222,64 @@ test('Grade 10 dashboard recognizes the backend format and counts approved class
   assert.equal(dashboard.metrics.find(item => item.label === 'Classes')?.value, 1);
   assert.ok(captured.some(item => item.url === '/student/subjects'));
 });
+
+for (const role of ['admin', 'secretary', 'headteacher', 'teacher', 'student'] as const) {
+  test(`${role} dashboard preserves all available activity rows and server order for pagination`, async () => {
+    const source = Array.from({ length: role === 'admin' ? 10 : 11 }, (_, index) => ({
+      id: `activity-${11 - index}`, name: `School User ${index}`, email: `user${index}@example.test`,
+      message: `Activity ${index}`, type: 'account', occurredAt: '2026-10-09T03:00:00Z',
+      dateKey: '2026-10-09', status: 'Present', enrollmentStatus: 'pending',
+    }));
+    const summary = { totalRecords: 14, presentCount: 12, absentCount: 1, lateCount: 1 };
+    let responses: Record<string, unknown>;
+    let metrics: { label: string; value: number }[];
+    switch (role) {
+      case 'admin':
+        responses = { '/admin/analytics': { success: true, recentActivities: source,
+          analytics: { totalStudents: 23, totalTeachers: 4, totalSubjects: 6, totalAssessments: 9 } } };
+        metrics = [{ label: 'Students', value: 23 }, { label: 'Teachers', value: 4 },
+          { label: 'Subjects', value: 6 }, { label: 'Assessments', value: 9 }];
+        break;
+      case 'secretary':
+        responses = { '/secretary/students': { success: true, students: source },
+          '/secretary/attendance': { success: true, records: [], summary } };
+        metrics = [{ label: 'Students', value: 11 }, { label: 'Attendance records', value: 14 },
+          { label: 'Present', value: 12 }, { label: 'Absent', value: 1 }];
+        break;
+      case 'headteacher':
+        responses = { '/headteacher/teachers': { success: true, teachers: source,
+          summary: { totalTeachers: 11, totalStudents: 23, totalLessons: 6, totalAssessments: 9 } } };
+        metrics = [{ label: 'Teachers', value: 11 }, { label: 'Students', value: 23 },
+          { label: 'Lessons', value: 6 }, { label: 'Assessments', value: 9 }];
+        break;
+      case 'teacher':
+        responses = { '/teacher/subjects': { success: true, subjects: [{ id: 'math', lessonCount: 6 }] },
+          '/teacher/students': { success: true, students: [{ id: 'student-1', name: 'Student' }] },
+          '/teacher/enrollment-requests': { success: true, requests: source } };
+        metrics = [{ label: 'Classes', value: 1 }, { label: 'Students', value: 1 },
+          { label: 'Enrollment requests', value: 11 }, { label: 'Lessons', value: 6 }];
+        break;
+      case 'student':
+        responses = { '/student/attendance': { success: true, records: source, summary },
+          '/student/subjects': { success: true, subjects: [{ id: 'math', enrollmentStatus: 'approved' }],
+            pendingSubjects: [{ id: 'science', enrollmentStatus: 'pending' }] } };
+        metrics = [{ label: 'Classes', value: 1 }, { label: 'Attendance records', value: 14 },
+          { label: 'Present', value: 12 }, { label: 'Late', value: 1 }];
+        break;
+    }
+    const { edumatchApi, captured, setAccessToken } = await transport(request => {
+      assert.equal(request.method, 'get');
+      assert.ok(Object.hasOwn(responses, request.url), `Unexpected request: ${request.url}`);
+      return responses[request.url];
+    });
+    setAccessToken(`${role}-jwt`);
+    const dashboard = await edumatchApi.dashboard(role);
+    assert.deepEqual(dashboard.activity.map(item => item.id), source.map(item => item.id));
+    assert.deepEqual(dashboard.metrics, metrics);
+    assert.deepEqual(captured.map(item => item.url).sort(), Object.keys(responses).sort());
+    assert.ok(captured.every(item => item.authorization === `Bearer ${role}-jwt`));
+  });
+}
 
 test('enrollment approval passes the enrollment request ID rather than the student ID', async () => {
   const { edumatchApi, captured } = await transport(request => request.method === 'get'

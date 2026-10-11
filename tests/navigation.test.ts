@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { normalizeRole, FEATURES } from '../src/auth/roles';
 import { notificationRoute } from '../src/notifications/routes';
-import { availableFeatures } from '../src/screens/roleConfig';
+import { availableFeatures, routeFor } from '../src/screens/roleConfig';
 import { isGradeTenStudent } from '../src/auth/studentAccess';
 import type { User } from '../src/api/types';
 
@@ -24,6 +24,20 @@ test('notification data cannot navigate outside the current authorized role', ()
   assert.equal(notificationRoute({ route: '/student/grades' }, 'student'), '/student/grades');
   assert.equal(notificationRoute(null, 'admin'), null);
   assert.equal(FEATURES.teacher.includes('approvals'), true);
+});
+
+test('AI assessment usage has an admin workspace entry and authorized deep link only', () => {
+  const account: User = { id: 'admin', name: 'Administrator', email: 'admin@example.test', role: 'admin' };
+  assert.ok(availableFeatures(account).some(item => item.feature === 'ai-usage'));
+  assert.equal(FEATURES.admin.includes('ai-usage'), true);
+  assert.equal(routeFor('admin', 'ai-usage'), '/admin/ai-usage');
+  assert.equal(notificationRoute({ route: '/admin/ai-usage' }, 'admin'), '/admin/ai-usage');
+  for (const role of ['secretary', 'headteacher', 'teacher', 'student'] as const) {
+    assert.equal(FEATURES[role].includes('ai-usage'), false);
+    assert.equal(availableFeatures({ ...account, role, gradeLevel: 'Grade 10' }).some(item => item.feature === 'ai-usage'), false);
+    assert.equal(notificationRoute({ route: '/admin/ai-usage' }, role), null);
+    assert.equal(notificationRoute({ route: `/${role}/ai-usage` }, role), null);
+  }
 });
 
 test('all student grades can join a subject while academic tools recognize the server grade format', () => {

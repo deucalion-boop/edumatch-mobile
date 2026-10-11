@@ -124,18 +124,6 @@ async function getSupabaseAnalytics() {
     )).length),
   }));
 
-  const examTypeCounts = new Map();
-  const difficultyData = { easy: 0, medium: 0, hard: 0 };
-  assessments.forEach((assessment) => {
-    const examType = String(assessment.exam_type || '').trim();
-    if (examType) examTypeCounts.set(examType, (examTypeCounts.get(examType) || 0) + 1);
-    const difficulty = String(assessment.difficulty || '').trim().toLowerCase();
-    if (Object.prototype.hasOwnProperty.call(difficultyData, difficulty)) difficultyData[difficulty] += 1;
-  });
-  const examTypes = [...examTypeCounts.entries()]
-    .map(([name, count]) => ({ name, count }))
-    .sort((left, right) => right.count - left.count);
-
   const subjectMap = new Map();
   lessons.forEach((lesson) => {
     const subject = String(lesson.subject || '').trim();
@@ -236,17 +224,19 @@ async function getSupabaseAnalytics() {
       atRiskSubjects,
     },
     aiAnalytics: {
-      totalGeneratedExams: assessments.length,
-      totalAiChallenges: assessments.length,
-      recentChallenges: assessments.filter((assessment) => inRange(assessment.created_at, periodStart)).length,
-      topExamType: examTypes[0]?.name || '',
-      examTypes,
-      difficultyData,
-      attemptedExams: 0,
-      unattemptedExams: assessments.length,
-      completionRate: 0,
+      // Published assessments have no AI provenance. Draft usage is reported by /admin/ai-usage.
+      trackingAvailable: false,
+      totalGeneratedExams: null,
+      totalAiChallenges: null,
+      recentChallenges: null,
+      topExamType: '',
+      examTypes: [],
+      difficultyData: { easy: 0, medium: 0, hard: 0 },
+      attemptedExams: null,
+      unattemptedExams: null,
+      completionRate: null,
       mostEffectiveDifficulty: null,
-      usageDistribution: { labels: ['Attempted', 'Not Yet Attempted'], values: [0, assessments.length] },
+      usageDistribution: { labels: ['Attempted', 'Not Yet Attempted'], values: [0, 0] },
     },
     recentActivities,
   };

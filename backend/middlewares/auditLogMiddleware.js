@@ -1,4 +1,5 @@
 const { createAuditLog } = require('../services/supabaseAuditLogService');
+const { sanitizeAiGenerationMetadata } = require('../utils/aiGenerationMetadata');
 
 const AUDITED_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const CATEGORY_LABELS = {
@@ -164,12 +165,15 @@ function buildMetadata(req) {
         ? Object.values(req.files).reduce((total, items) => total + (Array.isArray(items) ? items.length : 0), 0)
         : 0;
 
-  return {
+  const metadata = {
     params: sanitizeObjectEntries(req.params),
     query: sanitizeObjectEntries(req.query),
     bodyKeys,
     fileCount,
   };
+  const aiGeneration = sanitizeAiGenerationMetadata(req.auditLogContext?.aiGeneration);
+  if (Object.keys(aiGeneration).length) metadata.aiGeneration = aiGeneration;
+  return metadata;
 }
 
 function buildActorSnapshot(req) {

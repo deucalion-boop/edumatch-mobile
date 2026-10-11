@@ -1,5 +1,5 @@
-import React from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
@@ -8,6 +8,7 @@ import { isGradeTenStudent } from '../auth/studentAccess';
 import { edumatchApi } from '../api/edumatch';
 import { Badge, Button, Card, colors, Empty, errorMessage, Heading, Screen, styles } from '../components/ui';
 import { availableFeatures, displayDate, featureNames, roleNames, routeFor } from './roleConfig';
+import { getListPage } from './listPagination';
 
 export function DashboardScreen() {
   const { user } = useAuth();
@@ -19,9 +20,21 @@ export function DashboardScreen() {
   const singleColumn = width < 360 || fontScale > 1.25;
   const wide = width >= 1024 && !singleColumn;
   const query = useQuery({ queryKey: ['dashboard', role, account.id], queryFn: () => edumatchApi.dashboard(role, account), staleTime: 30_000 });
+  const [activityPage, setActivityPage] = useState(1);
+  const dashboardScroll = useRef<ScrollView>(null);
+  const activityOffset = useRef(0);
+  const activityPagination = getListPage(query.data?.activity || [], activityPage);
+  useEffect(() => { setActivityPage(1); }, [account.id, role]);
+  useEffect(() => {
+    if (query.isSuccess) setActivityPage(page => getListPage(query.data.activity, page).page);
+  }, [query.data?.activity, query.isSuccess]);
+  function changeActivityPage(page: number) {
+    setActivityPage(page);
+    dashboardScroll.current?.scrollTo({ y: activityOffset.current, animated: false });
+  }
   const firstName = account.name.trim().split(/\s+/)[0] || 'there';
   const tileStyle = singleColumn ? local.singleTile : wide ? local.wideTile : undefined;
-  return <Screen title={`Hello, ${firstName}`} subtitle={`${roleNames[role]} · Your school day at a glance`}
+  return <Screen scrollRef={dashboardScroll} title={`Hello, ${firstName}`} subtitle={`${roleNames[role]} · Your school day at a glance`}
     onRefresh={() => void query.refetch()} refreshing={query.isRefetching}
     action={<Pressable accessibilityRole="button" accessibilityLabel="Open notifications" onPress={() => router.push(routeFor(role, 'notifications'))}
       style={({ pressed }) => [local.notification, pressed && local.pressed]}><Ionicons name="notifications-outline" size={22} color={colors.darkGreen} /></Pressable>}>
@@ -41,11 +54,18 @@ export function DashboardScreen() {
       <Heading title="At a glance" detail="Latest figures from your school" />
       <View style={local.metricGrid}>{query.data.metrics.filter(metric => !limitedAcademics || metric.label !== 'Classes').map((metric, index) =>
         <View key={`${metric.label}-${index}`} style={[local.metric, tileStyle]}><View style={local.metricLabelRow}><View style={local.metricDot} /><Text style={local.metricLabel}>{metric.label}</Text></View><Text style={local.metricValue}>{metric.value}</Text></View>)}</View>
+      <View style={local.activitySection} onLayout={event => { activityOffset.current = event.nativeEvent.layout.y; }}>
       <Heading title="Recent activity" detail="Your latest school updates" />
-      {query.data.activity.length ? <Card style={local.activityCard}>{query.data.activity.slice(0, 6).map((item, index) =>
+      {activityPagination.totalRecords ? <Card style={local.activityCard}>{activityPagination.records.map((item, index) =>
         <View key={item.id} style={[local.activityRow, index > 0 && local.activityDivider]}><View style={local.activityIcon}><Ionicons name={role === 'student' ? 'calendar-outline' : 'document-text-outline'} size={19} color={colors.darkGreen} /></View>
           <View style={local.activityCopy}><View style={local.activityHeading}><Text style={local.activityTitle}>{item.title}</Text><Badge label={item.status} /></View>{item.subtitle ? <Text style={styles.bodyMuted}>{item.subtitle}</Text> : null}{item.description ? <Text style={styles.body}>{item.description}</Text> : null}{item.createdAt ? <Text style={local.activityDate}>{displayDate(item.createdAt)}</Text> : null}</View>
-        </View>)}</Card> : <Empty title="You're up to date" detail="Your latest school activity will appear here." />}
+        </View>)}
+        <View style={local.activityPagination}>
+          <View style={[styles.between, { flexWrap: 'wrap', gap: 8 }]}><Text style={styles.bodyMuted}>Showing {activityPagination.start}–{activityPagination.end} of {activityPagination.totalRecords}</Text><Text accessibilityLiveRegion="polite" style={styles.body}>Page {activityPagination.page} of {activityPagination.totalPages}</Text></View>
+          <View style={styles.row}><View style={local.paginationButton}><Button title="Previous" variant="secondary" disabled={activityPagination.page <= 1} onPress={() => changeActivityPage(activityPagination.page - 1)} /></View><View style={local.paginationButton}><Button title="Next" variant="secondary" disabled={activityPagination.page >= activityPagination.totalPages} onPress={() => changeActivityPage(activityPagination.page + 1)} /></View></View>
+        </View>
+      </Card> : <Empty title="You're up to date" detail="Your latest school activity will appear here." />}
+      </View>
     </> : null}
     <Button title="View all school tools" variant="secondary" icon="grid-outline" onPress={() => router.push(`/${role}/workspace`)} />
   </Screen>;
@@ -72,6 +92,7 @@ const local = StyleSheet.create({
   dataStatus: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 }, statusCopy: { flex: 1, minWidth: 0, gap: 5 }, statusTitle: { color: colors.ink, fontSize: 14, lineHeight: 20, fontWeight: '600' },
   metricGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 }, metric: { width: '45%', flexGrow: 1, minWidth: 0, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 18, padding: 16, gap: 10 }, metricLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 8 }, metricDot: { width: 6, height: 6, flexShrink: 0, borderRadius: 3, backgroundColor: colors.primary },
   metricLabel: { flex: 1, minWidth: 0, color: colors.muted, fontSize: 13, lineHeight: 19 }, metricValue: { fontSize: 28, lineHeight: 34, color: colors.darkGreen, fontWeight: '800' },
+  activitySection: { gap: 16 }, activityPagination: { padding: 16, gap: 12, borderTopWidth: 1, borderTopColor: colors.border }, paginationButton: { flex: 1, minWidth: 0 },
   activityCard: { padding: 0, gap: 0 }, activityRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, padding: 16 }, activityDivider: { borderTopWidth: 1, borderTopColor: colors.border }, activityIcon: { width: 34, height: 34, borderRadius: 10, backgroundColor: colors.pale, alignItems: 'center', justifyContent: 'center', flexShrink: 0 }, activityCopy: { flex: 1, minWidth: 0, gap: 5 }, activityHeading: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, flexWrap: 'wrap' },
   activityTitle: { flex: 1, minWidth: 80, color: colors.ink, fontSize: 14, lineHeight: 21, fontWeight: '600' }, activityDate: { color: colors.muted, fontSize: 12, lineHeight: 18 },
 });
