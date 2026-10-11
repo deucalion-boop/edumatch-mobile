@@ -225,7 +225,7 @@ export const authApi = {
     return normalizeLogin((await api.post('/auth/login', input)).data);
   },
   async verifyOtp(input: VerifyOtpInput): Promise<AuthSession> {
-    const result = normalizeLogin((await api.post('/auth/login/verify-otp', input)).data);
+    const result = normalizeLogin((await api.post('/auth/login/verify-otp', { challengeToken: input.challengeToken, otpCode: input.otpCode })).data);
     if ('challengeToken' in result) throw new Error('Login verification did not complete.');
     return result;
   },

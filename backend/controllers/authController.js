@@ -483,12 +483,6 @@ const verifyLoginOtp = asyncHandler(async (req, res) => {
     throw error;
   }
   const settings = await getAppSettings();
-  if (settings.security.recaptchaEnabled !== false
-    && !await verifyRecaptchaToken({ token: req.body?.captchaToken, remoteIp: resolveClientIpAddress(req) })) {
-    const error = new Error('Please verify that you are not a robot');
-    error.statusCode = 400;
-    throw error;
-  }
 
   const challengeTokenHash = crypto.createHash('sha256').update(challengeToken).digest('hex');
   const challenge = await findActiveChallenge(challengeTokenHash);

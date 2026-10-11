@@ -98,7 +98,7 @@ export function LoginScreen() {
     setCaptcha(false); setLoading(true); setError(null);
     try {
       const result = pending.challengeToken
-        ? await authApi.verifyOtp({ challengeToken: pending.challengeToken, otpCode: pending.otpCode, captchaToken })
+        ? await authApi.verifyOtp({ challengeToken: pending.challengeToken, otpCode: pending.otpCode })
         : await authApi.login({ username: pending.username, password: pending.password, captchaToken, remember: pending.remember });
       if (!mounted.current || attempt !== currentAttempt.current) return;
       if ('requiresOtp' in result && result.requiresOtp) { setChallenge(result); setCode(''); setPassword(''); setShowPassword(false); setNotice(null); }
@@ -120,9 +120,9 @@ export function LoginScreen() {
     const attempt = ++currentAttempt.current;
     pendingSignIn.current = { attempt, username: username.trim(), password, challengeToken: challenge?.challengeToken, otpCode: code, remember };
     requestInFlight.current = true; setLoading(true);
-    // Fetch for every attempt: a school administrator may have changed the policy
-    // since the login screen opened or since the OTP email was sent.
-    const requiresCaptcha = await requireRecaptchaForAttempt(() => authApi.loginSecuritySettings());
+    // Only the initial login checks the school reCAPTCHA policy. An OTP
+    // challenge continues directly to verification using the entered code.
+    const requiresCaptcha = await requireRecaptchaForAttempt(() => authApi.loginSecuritySettings(), challenge ? 'verify-code' : 'login');
     if (!mounted.current || attempt !== currentAttempt.current) return;
     if (requiresCaptcha) {
       requestInFlight.current = false; setLoading(false);

@@ -51,7 +51,6 @@ export interface LoginInput {
 export interface VerifyOtpInput {
   challengeToken: string;
   otpCode: string;
-  captchaToken: string;
 }
 
 export interface ListFilters {

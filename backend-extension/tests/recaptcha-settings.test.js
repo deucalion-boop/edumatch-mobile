@@ -321,7 +321,7 @@ test('school reCAPTCHA changes apply to the next login without restarting the ba
   assert.equal(fixture.events.filter(([event]) => event === 'google').length, 1);
 });
 
-test('OTP verification honors school reCAPTCHA while retaining valid-code, challenge and account checks', async () => {
+test('OTP verification retains valid-code, challenge and account checks without reCAPTCHA', async () => {
   const fixture = loginFixture();
   fixture.settings.security.recaptchaEnabled = false;
   fixture.state.googleError = true;
@@ -344,15 +344,59 @@ test('OTP verification honors school reCAPTCHA while retaining valid-code, chall
   assert.equal(fixture.events.some(([event]) => event === 'google'), false);
 });
 
-test('re-enabling school reCAPTCHA also restores the CAPTCHA check for outstanding OTP challenges', async () => {
+test('every role verifies an OTP without CAPTCHA regardless of school reCAPTCHA policy or Google availability', async () => {
+  for (const enabled of [true, false]) {
+    for (const role of ['student', 'teacher', 'headteacher', 'secretary', 'admin']) {
+      const fixture = loginFixture();
+      fixture.settings.security.recaptchaEnabled = enabled;
+      fixture.user.role = role;
+      fixture.state.googleError = true;
+      fixture.env.RECAPTCHA_SECRET_KEY = '';
+      const request = fixture.request({ challengeToken: 'a'.repeat(64), otpCode: '123456' });
+      delete request.body.captchaToken;
+      const result = await invoke(fixture.controller.verifyLoginOtp, request);
+      assert.equal(result.failure, undefined);
+      assert.equal(result.response.statusCode, 200);
+      assert.equal(result.response.body.token, 'test-session-token');
+      assert.equal(fixture.events.filter(([event]) => event === 'session').length, 1);
+      assert.equal(fixture.events.some(([event]) => event === 'google'), false);
+    }
+  }
+});
+
+test('re-enabling school reCAPTCHA does not add CAPTCHA to an outstanding OTP challenge', async () => {
   const fixture = loginFixture();
-  const request = fixture.request({ challengeToken: 'a'.repeat(64), otpCode: '123456', captchaToken: '', recaptchaEnabled: false });
-  assert.equal((await invoke(fixture.controller.verifyLoginOtp, request)).failure.statusCode, 400);
+  fixture.settings.security.recaptchaEnabled = false;
+  assert.equal((await invoke(fixture.controller.login, fixture.request({ captchaToken: '' }))).response.statusCode, 202);
+  fixture.settings.security.recaptchaEnabled = true;
   fixture.state.googleError = true;
-  request.body.captchaToken = 'verified';
-  assert.equal((await invoke(fixture.controller.verifyLoginOtp, request)).failure.statusCode, 400);
-  fixture.state.googleError = false;
+  const request = fixture.request({ challengeToken: 'a'.repeat(64), otpCode: '123456', captchaToken: '', recaptchaEnabled: false });
   assert.equal((await invoke(fixture.controller.verifyLoginOtp, request)).response.statusCode, 200);
+  assert.equal(fixture.events.some(([event]) => event === 'google'), false);
+});
+
+test('OTP verification rejects malformed input, expired challenges and maximum attempts without CAPTCHA', async () => {
+  const fixture = loginFixture();
+  const request = fixture.request({ challengeToken: 'a'.repeat(64), otpCode: '123456', captchaToken: '' });
+  for (const body of [
+    { ...request.body, challengeToken: '' }, { ...request.body, otpCode: '' },
+    { ...request.body, otpCode: '12345' }, { ...request.body, otpCode: '1234567' },
+  ]) {
+    assert.equal((await invoke(fixture.controller.verifyLoginOtp, { ...request, body })).failure.statusCode, 400);
+  }
+  fixture.state.challengeAvailable = false;
+  assert.equal((await invoke(fixture.controller.verifyLoginOtp, request)).failure.statusCode, 400);
+  fixture.state.challengeAvailable = true;
+  fixture.challenge.failedAttempts = 5;
+  assert.equal((await invoke(fixture.controller.verifyLoginOtp, request)).failure.statusCode, 400);
+  fixture.challenge.failedAttempts = 4;
+  request.body.otpCode = '000000';
+  assert.equal((await invoke(fixture.controller.verifyLoginOtp, request)).failure.statusCode, 401);
+  assert.equal(fixture.challenge.failedAttempts, 5);
+  assert.ok(fixture.challenge.consumedAt);
+  request.body.otpCode = '123456';
+  assert.equal((await invoke(fixture.controller.verifyLoginOtp, request)).failure.statusCode, 400);
+  assert.equal(fixture.events.some(([event]) => event === 'session' || event === 'google'), false);
 });
 
 test('unavailable school settings block both login stages before Google or session issuance', async () => {

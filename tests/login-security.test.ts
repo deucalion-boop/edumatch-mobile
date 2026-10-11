@@ -15,7 +15,7 @@ test('an unavailable policy keeps CAPTCHA enabled rather than bypassing the secu
   }
 });
 
-test('every sign-in and OTP verification attempt reads the current policy after an administrator changes it', async () => {
+test('each initial sign-in reads the current policy after an administrator changes it', async () => {
   let enabled = false;
   let loads = 0;
   const loadPolicy = async () => { loads += 1; return { recaptchaEnabled: enabled }; };
@@ -25,4 +25,14 @@ test('every sign-in and OTP verification attempt reads the current policy after 
   enabled = false;
   assert.equal(await requireRecaptchaForAttempt(loadPolicy), false);
   assert.equal(loads, 3);
+});
+
+test('OTP verification skips CAPTCHA and does not fetch the login policy', async () => {
+  let loads = 0;
+  const requireCaptcha = await requireRecaptchaForAttempt(async () => {
+    loads += 1;
+    return { recaptchaEnabled: true };
+  }, 'verify-code');
+  assert.equal(requireCaptcha, false);
+  assert.equal(loads, 0);
 });

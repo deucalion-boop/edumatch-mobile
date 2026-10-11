@@ -37,7 +37,7 @@ function aiUsageFixture() {
   };
 }
 
-test('login preserves OTP timing and verifies a fresh CAPTCHA before accepting the server role', async () => {
+test('login preserves OTP timing and verifies the emailed code without another CAPTCHA', async () => {
   const { authApi, captured } = await transport(request => request.url === '/auth/login'
     ? { success: true, requiresOtp: true, challengeToken: 'challenge', deliveryHint: 'm***@gmail.com',
       expiresAt: '2026-10-09T03:00:00Z', resendAvailableAt: '2026-10-09T02:58:30Z' }
@@ -46,14 +46,14 @@ test('login preserves OTP timing and verifies a fresh CAPTCHA before accepting t
   const challenge = await authApi.login({ username: 'principal', password: 'secret', captchaToken: 'captcha-one', remember: true });
   assert.equal('challengeToken' in challenge && challenge.challengeToken, 'challenge');
   assert.equal('expiresAt' in challenge && challenge.expiresAt, '2026-10-09T03:00:00Z');
-  const session = await authApi.verifyOtp({ challengeToken: 'challenge', otpCode: '123456', captchaToken: 'captcha-two' });
+  const session = await authApi.verifyOtp({ challengeToken: 'challenge', otpCode: '123456' });
   assert.equal(session.user.id, 'principal-1');
   assert.equal(session.user.role, 'admin');
   assert.equal(session.user.forcePasswordChange, true);
   assert.equal(session.token, 'verified-jwt');
   assert.deepEqual(captured.map(item => [item.url, item.body]), [
     ['/auth/login', { username: 'principal', password: 'secret', captchaToken: 'captcha-one', remember: true }],
-    ['/auth/login/verify-otp', { challengeToken: 'challenge', otpCode: '123456', captchaToken: 'captcha-two' }],
+    ['/auth/login/verify-otp', { challengeToken: 'challenge', otpCode: '123456' }],
   ]);
 });
 
