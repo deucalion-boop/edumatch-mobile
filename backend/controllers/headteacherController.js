@@ -27,6 +27,7 @@ const {
   mapUserResponse,
   issueInviteForUser,
   applyRoleScopedFields,
+  ensureTeacherDepartmentAvailable,
 } = require('../services/userManagementService');
 const { uploadFiles } = require('../services/storageService');
 const {
@@ -452,6 +453,11 @@ const createTeacherAccount = asyncHandler(async (req, res) => {
     role: ROLE_TEACHER,
     department,
     subject,
+  });
+
+  await ensureTeacherDepartmentAvailable({
+    role: ROLE_TEACHER,
+    department: scopedFields.department,
   });
 
   const created = await createSupabaseAccount({

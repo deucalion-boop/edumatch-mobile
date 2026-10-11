@@ -19,7 +19,7 @@ function loadModule(source, requireMock) {
   return module.exports;
 }
 
-function createHarness({ sectionReadError, existingHeadTeacher } = {}) {
+function createHarness({ sectionReadError, existingHeadTeacher, departmentReadError, userToUpdate } = {}) {
   const inserts = [];
   const invites = [];
   const sectionQueries = [];
@@ -27,9 +27,11 @@ function createHarness({ sectionReadError, existingHeadTeacher } = {}) {
   const events = [];
   const emailQueries = [];
   const accounts = {
+    async findSupabaseAccount() { return userToUpdate; },
     async findSupabaseAccountByEmail(email) { emailQueries.push(email); return null; },
     async findSupabaseHeadTeacherByDepartment(department) {
       departmentQueries.push(department);
+      if (departmentReadError) throw departmentReadError;
       return existingHeadTeacher || null;
     },
     async createSupabaseAccount(payload) {
@@ -72,6 +74,7 @@ function createHarness({ sectionReadError, existingHeadTeacher } = {}) {
   });
   const userManagementService = loadModule(managementSource, name => {
     if (name === '../constants/userRoles') return userRoles;
+    if (name === './supabaseAccountService') return accounts;
     return {};
   });
   const controller = loadModule(controllerSource, name => {
@@ -98,7 +101,13 @@ function createHarness({ sectionReadError, existingHeadTeacher } = {}) {
     }, res, value => { error = value; });
     return { res, error };
   }
-  return { create, inserts, invites, sectionQueries, departmentQueries, emailQueries, events };
+  async function update(body = {}) {
+    const res = {};
+    let error;
+    await controller.updateUser({ user: { _id: 'creator', role: 'admin' }, params: { id: userToUpdate._id }, body }, res, value => { error = value; });
+    return { res, error };
+  }
+  return { create, update, inserts, invites, sectionQueries, departmentQueries, emailQueries, events };
 }
 
 const handlers = ['createUser', 'createAndInviteUser'];
@@ -161,7 +170,7 @@ test('Section storage failures propagate without partially creating an account',
 
 test('a Section in a staff payload does not create a student Section assignment', async () => {
   for (const handler of handlers) {
-    const harness = createHarness();
+    const harness = createHarness({ existingHeadTeacher: { _id: 'department-head' } });
     const { error } = await harness.create(handler, { role: 'teacher', department: 'Science', sectionId: 'inactive-section' }, 'secretary');
     assert.equal(error, undefined);
     assert.equal(harness.inserts[0].sectionId, undefined);
@@ -214,7 +223,7 @@ test('admin and secretary creation require a nonblank username for every managed
 test('admin creation trims and persists the username for every managed account role', async () => {
   for (const handler of handlers) {
     for (const role of managedRoles) {
-      const harness = createHarness();
+      const harness = createHarness({ existingHeadTeacher: role === 'teacher' ? { _id: 'department-head' } : undefined });
       const { res, error } = await harness.create(handler, {
         role, username: '  sample.account  ', department: 'Science', sectionId: 'active-section',
       });
@@ -241,6 +250,33 @@ test('student creation leaves strand unassigned even when a legacy payload suppl
   }
 });
 
+test('admin and secretary student creation always saves Grade 10 regardless of a legacy grade selection', async () => {
+  for (const handler of handlers) {
+    for (const actorRole of ['admin', 'secretary']) {
+      for (const gradeLevel of [undefined, null, '', '  ', 'Grade 7', 'Grade 8', 'Grade 9', 'Grade 10', 'Grade 11', 'Grade 12', 'legacy-grade']) {
+        const harness = createHarness();
+        const { res, error } = await harness.create(handler, { gradeLevel }, actorRole);
+        assert.equal(error, undefined);
+        assert.equal(res.statusCode, 201);
+        assert.equal(harness.inserts[0].gradeLevel, 'Grade 10');
+        if (handler === 'createUser') assert.equal(res.body.user.gradeLevel, 'Grade 10');
+      }
+    }
+  }
+});
+
+test('a grade in staff creation payloads does not assign a student grade level', async () => {
+  for (const handler of handlers) {
+    for (const role of ['secretary', 'teacher', 'headteacher']) {
+      const harness = createHarness({ existingHeadTeacher: role === 'teacher' ? { _id: 'department-head' } : undefined });
+      const { res, error } = await harness.create(handler, { role, department: 'Science', gradeLevel: 'Grade 12' });
+      assert.equal(error, undefined);
+      assert.equal(res.statusCode, 201);
+      assert.equal(harness.inserts[0].gradeLevel, '');
+    }
+  }
+});
+
 test('secretary creation succeeds without department and ignores stale department fields', async () => {
   for (const handler of handlers) {
     for (const department of [undefined, '', 'Science', 'Monitoring']) {
@@ -260,7 +296,7 @@ test('teacher and head teacher creation persist the selected department', async 
     for (const actorRole of ['admin', 'secretary']) {
       for (const role of ['teacher', 'headteacher', 'head_teacher']) {
         for (const department of userRoles.DEPARTMENTS) {
-          const harness = createHarness();
+          const harness = createHarness({ existingHeadTeacher: role === 'teacher' ? { _id: 'department-head' } : undefined });
           const { res, error } = await harness.create(handler, {
             role, department: `  ${department.toLowerCase()}  `,
           }, actorRole);
@@ -269,6 +305,7 @@ test('teacher and head teacher creation persist the selected department', async 
           assert.equal(harness.inserts[0].department, department);
           assert.equal(res.body.user.department, department);
           assert.equal(harness.inserts[0].subject, role === 'teacher' ? department : '');
+          assert.equal(harness.inserts[0].managedBy, role === 'teacher' ? 'department-head' : 'creator');
         }
       }
     }
@@ -299,4 +336,59 @@ test('head teacher creation still prevents duplicate heads for the selected depa
     assert.equal(harness.inserts.length, 0);
     assert.equal(harness.invites.length, 0);
   }
+});
+
+test('admin and secretary cannot create teachers until the selected department has a Head Teacher', async () => {
+  for (const handler of handlers) {
+    for (const actorRole of ['admin', 'secretary']) {
+      for (const department of userRoles.DEPARTMENTS) {
+        const harness = createHarness();
+        const { error } = await harness.create(handler, { role: 'teacher', department }, actorRole);
+        assert.equal(error.statusCode, 400);
+        assert.equal(error.message, `Create a Head Teacher for the ${department} department before creating a Teacher account.`);
+        assert.deepEqual(harness.departmentQueries, [department]);
+        assert.equal(harness.inserts.length, 0);
+        assert.equal(harness.invites.length, 0);
+      }
+    }
+  }
+});
+
+test('department lookup failures prevent teacher account and onboarding writes', async () => {
+  for (const handler of handlers) {
+    const lookupError = Object.assign(new Error('Department storage unavailable'), { statusCode: 500 });
+    const harness = createHarness({ departmentReadError: lookupError });
+    const { error } = await harness.create(handler, { role: 'teacher', department: 'Science' });
+    assert.equal(error, lookupError);
+    assert.deepEqual(harness.departmentQueries, ['Science']);
+    assert.equal(harness.inserts.length, 0);
+    assert.equal(harness.invites.length, 0);
+  }
+});
+
+test('a Head Teacher assignment enables creation regardless of the existing head account status', async () => {
+  for (const handler of handlers) {
+    for (const status of ['pending', 'active', 'inactive', 'suspended']) {
+      const harness = createHarness({ existingHeadTeacher: { _id: 'department-head', status } });
+      const { res, error } = await harness.create(handler, { role: 'teacher', department: 'Science' });
+      assert.equal(error, undefined);
+      assert.equal(res.statusCode, 201);
+      assert.equal(harness.inserts[0].managedBy, 'department-head');
+      assert.deepEqual(harness.invites, ['new-account']);
+    }
+  }
+});
+
+test('editing an existing teacher remains allowed without a Head Teacher assignment', async () => {
+  let saves = 0;
+  const teacher = { _id: 'existing-teacher', role: 'teacher', department: 'Science', managedBy: 'original-manager', async save() { saves += 1; } };
+  const harness = createHarness({ userToUpdate: teacher });
+  const { res, error } = await harness.update({ department: 'Science', name: 'Updated Teacher' });
+  assert.equal(error, undefined);
+  assert.equal(res.statusCode, 200);
+  assert.equal(saves, 1);
+  assert.equal(teacher.managedBy, 'original-manager');
+  assert.equal(harness.departmentQueries.length, 0);
+  assert.equal(harness.inserts.length, 0);
+  assert.equal(harness.invites.length, 0);
 });

@@ -7,8 +7,9 @@ import { isGradeTenStudent } from '../auth/studentAccess';
 import { edumatchApi, notificationApi } from '../api/edumatch';
 import type { Approval, ResourceItem, Role } from '../api/types';
 import { Badge, Button, Card, Chip, confirmAction, Empty, errorMessage, Field, Heading, Notice, QueryStatus, Screen, styles } from '../components/ui';
-import { displayDate, rawText } from './roleConfig';
+import { displayDate, featureNames, rawText } from './roleConfig';
 import { studentSectionOptions } from './studentSections';
+import { teacherDepartmentOptions } from './teacherDepartments';
 
 function ItemCard({ item, children }: { item: ResourceItem; children?: React.ReactNode }) {
   return <Card><View style={styles.between}><Text style={[styles.heading, { flex: 1 }]}>{item.title}</Text><Badge label={item.status} /></View>
@@ -27,6 +28,7 @@ function DetailFields({ row, fields }: { row: Record<string, unknown>; fields: {
 export function RecordsScreen() {
   const { user } = useAuth();
   const role = user!.role;
+  const managingUsers = role !== 'student';
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('');
   const [archived, setArchived] = useState(false);
@@ -44,7 +46,7 @@ export function RecordsScreen() {
   }, staleTime: 30_000 });
   const requestExport = useMutation({ mutationFn: () => edumatchApi.requestArchivedExport({ schoolYear: schoolYear.trim() || undefined, searchTerm: filter || undefined }), onSuccess: async () => { setMessage('Your archived records export request has been sent for administrator approval.'); await client.invalidateQueries({ queryKey: ['approvals'] }); } });
   const archive = useMutation({ mutationFn: () => edumatchApi.archiveSchoolYear(schoolYear.trim()), onSuccess: async () => { setMessage('The school year has been archived.'); setArchived(true); await client.invalidateQueries({ queryKey: ['records'] }); } });
-  return <Screen title="School records" subtitle="Find the records available to your account." refreshing={query.isRefetching} onRefresh={() => void query.refetch()}>
+  return <Screen title={managingUsers ? featureNames.records : 'School records'} subtitle={managingUsers ? 'Find and manage school user accounts.' : 'Find the records available to your account.'} refreshing={query.isRefetching} onRefresh={() => void query.refetch()}>
     {message ? <Notice message={message} tone="success" /> : null}
     {role !== 'student' && !creating ? <Button title={role === 'teacher' ? 'Add a student' : role === 'headteacher' ? 'Add a teacher' : 'Add a school account'} icon="person-add-outline" onPress={() => setCreating(true)} /> : null}
     {creating ? <AccountCreator role={role} onClose={() => setCreating(false)} onSaved={() => { setCreating(false); setMessage('The school account has been created.'); void client.invalidateQueries({ queryKey: ['records'] }); }} /> : null}
@@ -74,9 +76,12 @@ function AccountCreator({ role, onClose, onSaved }: { role: Role; onClose: () =>
   const [username, setUsername] = useState('');
   const [department, setDepartment] = useState(role === 'headteacher' ? user!.department || '' : '');
   const needsDepartment = accountRole === 'headteacher' || accountRole === 'teacher';
-  const availableDepartments = DEPARTMENTS.filter(option => role !== 'headteacher' || option === user!.department);
+  const needsHeadTeacherDirectory = accountRole === 'teacher' && (role === 'admin' || role === 'secretary');
+  const headTeachers = useQuery({ queryKey: ['account-departments', role], queryFn: () => edumatchApi.users(role, { role: 'headteacher' }), enabled: needsHeadTeacherDirectory, staleTime: 0 });
+  const availableDepartments = accountRole === 'teacher'
+    ? teacherDepartmentOptions(headTeachers.isSuccess ? headTeachers.data || [] : [], user!)
+    : DEPARTMENTS.filter(option => role !== 'headteacher' || option === user!.department);
   const selectedDepartment = availableDepartments.find(option => option === department);
-  const [gradeLevel, setGradeLevel] = useState('');
   const [sectionId, setSectionId] = useState('');
   const sections = useQuery({ queryKey: ['sections', role], queryFn: () => edumatchApi.sections(role), enabled: accountRole === 'student', staleTime: 60_000 });
   const availableSections = studentSectionOptions(sections.data || [], user!);
@@ -85,22 +90,24 @@ function AccountCreator({ role, onClose, onSaved }: { role: Role; onClose: () =>
     name: name.trim(), email: email.trim(), username: username.trim(), role: accountRole,
     department: needsDepartment ? selectedDepartment : undefined,
     subject: accountRole === 'teacher' ? selectedDepartment : undefined,
-    gradeLevel: accountRole === 'student' && role !== 'teacher' && gradeLevel.trim() ? `Grade ${gradeLevel.trim()}` : undefined,
     sectionId: accountRole === 'student' ? selectedSectionId || undefined : undefined,
   }), onSuccess: onSaved });
   return <Card><Heading title="New school account" /><View style={styles.chipRow}>{allowed.map(option => <Chip key={option} label={option === 'headteacher' ? 'Head Teacher' : option.charAt(0).toUpperCase() + option.slice(1)} active={accountRole === option} onPress={() => setAccountRole(option)} />)}</View>
     <Field label="Full name" value={name} onChangeText={setName} autoCapitalize="words" placeholder="Student or staff name" /><Field label="Email address" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" placeholder="School email address" />
     <Field label="Username" value={username} onChangeText={setUsername} autoCapitalize="none" autoCorrect={false} maxLength={50} placeholder="Student or staff username" />
     {accountRole === 'student' ? <>
-      {role !== 'teacher' ? <Field label="Grade level" value={gradeLevel} onChangeText={setGradeLevel} keyboardType="number-pad" placeholder="For example: 10" /> : null}
-      <Heading title="Section" />
+      <Heading title="Section" detail="New student accounts are automatically assigned to Grade 10." />
       <QueryStatus loading={sections.isPending} error={sections.error} retry={() => void sections.refetch()} />
       <View style={styles.chipRow}>{availableSections.map(section => <Chip key={section.id} label={section.name} active={selectedSectionId === section.id} onPress={() => setSectionId(section.id)} />)}</View>
       {sections.isSuccess && !availableSections.length ? <Notice message={role === 'teacher' ? 'You need an assigned advisory section before adding students.' : 'No active sections are available. Contact your school administrator.'} /> : null}
     </> : needsDepartment ? <>
-      <Heading title="Department" detail={role === 'headteacher' ? 'Teachers are assigned to your department.' : 'Select the department for this account.'} />
+      <Heading title="Department" detail={role === 'headteacher' ? 'Teachers are assigned to your department.' : accountRole === 'teacher' ? 'Select a department with an assigned Head Teacher.' : 'Select the department for this account.'} />
+      {needsHeadTeacherDirectory ? <QueryStatus loading={headTeachers.isPending} error={headTeachers.error} retry={() => void headTeachers.refetch()} /> : null}
       <View style={styles.chipRow}>{availableDepartments.map(option => <Chip key={option} label={option} active={selectedDepartment === option} onPress={() => setDepartment(option)} />)}</View>
-      {!availableDepartments.length ? <Notice message="Your account needs an assigned department before you can add teachers." /> : null}
+      {!availableDepartments.length && (!needsHeadTeacherDirectory || headTeachers.isSuccess) ? <>
+        <Notice message={role === 'headteacher' ? 'Your account needs an assigned department before you can add teachers.' : role === 'admin' ? 'Create a Head Teacher account first to make a department available for teachers.' : 'No departments are available for teachers. Ask your school administrator to create a Head Teacher account first.'} />
+        {role === 'admin' && accountRole === 'teacher' ? <Button title="Create a Head Teacher" variant="secondary" onPress={() => { setAccountRole('headteacher'); setDepartment(''); create.reset(); }} /> : null}
+      </> : null}
     </> : null}
     {create.error ? <Notice message={errorMessage(create.error)} tone="error" /> : null}<Button title="Create account" loading={create.isPending} disabled={!name.trim() || !email.trim() || !username.trim() || (needsDepartment && !selectedDepartment) || (accountRole === 'student' && (!selectedSectionId || !availableSections.some(section => section.id === selectedSectionId)))} onPress={() => create.mutate()} /><Button title="Cancel" disabled={create.isPending} variant="plain" onPress={onClose} />
   </Card>;

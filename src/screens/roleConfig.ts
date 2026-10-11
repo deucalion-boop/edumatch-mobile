@@ -7,18 +7,18 @@ export const roleNames: Record<Role, string> = {
 export type Feature = 'approvals' | 'academic' | 'attendance' | 'grades' | 'subjects' | 'lessons' | 'records' | 'announcements' | 'notifications';
 export const featureNames: Record<Feature, string> = {
   approvals: 'Approvals', academic: 'Academic monitoring', attendance: 'Attendance', grades: 'Grades & feedback',
-  subjects: 'Subjects', lessons: 'Lessons & activities', records: 'School records', announcements: 'Announcements', notifications: 'Notifications',
+  subjects: 'Subjects', lessons: 'Lessons & activities', records: 'User Management', announcements: 'Announcements', notifications: 'Notifications',
 };
 export const roleFeatures: Record<Role, { feature: Feature; detail: string; icon: string }[]> = {
   admin: [
     { feature: 'approvals', detail: 'Review account and export requests', icon: 'checkmark-done-outline' },
     { feature: 'academic', detail: 'Monitor school academic performance', icon: 'stats-chart-outline' },
-    { feature: 'records', detail: 'Find people and school records', icon: 'folder-open-outline' },
+    { feature: 'records', detail: 'Create and manage school user accounts', icon: 'folder-open-outline' },
     { feature: 'attendance', detail: 'Review school attendance records', icon: 'calendar-outline' },
     { feature: 'announcements', detail: 'Send school messages', icon: 'megaphone-outline' },
   ],
   secretary: [
-    { feature: 'records', detail: 'Find and review school records', icon: 'folder-open-outline' },
+    { feature: 'records', detail: 'Find and manage school user accounts', icon: 'folder-open-outline' },
     { feature: 'attendance', detail: 'Track attendance records', icon: 'calendar-outline' },
     { feature: 'approvals', detail: 'Track export request decisions', icon: 'document-text-outline' },
     { feature: 'announcements', detail: 'Send messages to school accounts', icon: 'megaphone-outline' },

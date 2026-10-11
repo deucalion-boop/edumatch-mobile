@@ -30,7 +30,7 @@ The existing browser invitation and password reset routes remain compatible: `GE
 | Role | Method and route | Request / response |
 | --- | --- | --- |
 | Admin, Secretary | `GET /:role/users` | `{ users }`; visibility is constrained by the backend user management policy. This endpoint is not paginated; mobile search/status/department filtering is local. |
-| Admin, Secretary | `POST /:role/users` | `{ name, email, username, role, contactNumber?, department?, subject?, gradeLevel?, sectionId?, advisorySectionId? }` → `{ user, invite? }`. Server validates role and assignments. New students start with an empty strand; legacy strand input is ignored. Department is required for teachers and head teachers and ignored for secretaries. |
+| Admin, Secretary | `POST /:role/users` | `{ name, email, username, role, contactNumber?, department?, subject?, sectionId?, advisorySectionId? }` → `{ user, invite? }`. Server validates role and assignments. New students are assigned `Grade 10` with an empty strand; legacy grade level and strand input are ignored. Department is required for teachers and head teachers and ignored for secretaries. Teacher creation requires an existing Head Teacher for that department; the new teacher is assigned to that Head Teacher via `managedBy`. |
 | Admin, Secretary | `GET /:role/users/:id` | `{ user }`, with additional learning insights for a student. |
 | Admin, Secretary | `PUT /:role/users/:id` | Editable user fields; optional multipart `profileImage` → `{ user }`. |
 | Admin, Secretary | `POST /:role/users/:id/messages` | `{ subject, content, urgent? }` → `{ messageRecord, notification }`; recipient is a **user ID**, not a section ID. |

@@ -3,6 +3,7 @@ const { sendEmailViaGmail } = require('./gmailService');
 const { DEPARTMENTS, ROLE_HEADTEACHER, ROLE_TEACHER } = require('../constants/userRoles');
 const { generateTemporaryPassword } = require('../utils/passwordPolicy');
 const { resolveStoredFileUrl } = require('../utils/fileStorage');
+const { findSupabaseHeadTeacherByDepartment } = require('./supabaseAccountService');
 
 const CONTACT_NUMBER_REGEX = /^\+?[0-9()\-. ]{7,30}$/;
 const MIN_INVITE_EXPIRY_HOURS = 24;
@@ -307,6 +308,18 @@ function applyRoleScopedFields(userPayload) {
   };
 }
 
+async function ensureTeacherDepartmentAvailable({ role, department }) {
+  if (role !== ROLE_TEACHER) return null;
+  const normalizedDepartment = normalizeDepartment(department, { required: true });
+  const headTeacher = await findSupabaseHeadTeacherByDepartment(normalizedDepartment);
+  if (!headTeacher) {
+    const error = new Error(`Create a Head Teacher for the ${normalizedDepartment} department before creating a Teacher account.`);
+    error.statusCode = 400;
+    throw error;
+  }
+  return headTeacher;
+}
+
 module.exports = {
   DEPARTMENTS,
   normalizeTeacherSubject,
@@ -318,4 +331,5 @@ module.exports = {
   sendInviteEmail,
   issueInviteForUser,
   applyRoleScopedFields,
+  ensureTeacherDepartmentAvailable,
 };

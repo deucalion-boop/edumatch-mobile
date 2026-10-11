@@ -25,6 +25,7 @@ const {
   mapUserResponse: mapManagedUserResponse,
   issueInviteForUser,
   applyRoleScopedFields,
+  ensureTeacherDepartmentAvailable,
 } = require('../services/userManagementService');
 const { createAdminMessageNotification } = require('../services/notificationService');
 const { countUnreadNotifications } = require('../services/supabaseNotificationService');
@@ -902,7 +903,7 @@ const getAuditLogs = asyncHandler(async (req, res) => {
 });
 
 const createAndInviteUser = asyncHandler(async (req, res) => {
-  const { name, email, username, role, contactNumber, department, subject, gradeLevel, sectionId } = req.body || {};
+  const { name, email, username, role, contactNumber, department, subject, sectionId } = req.body || {};
 
   if (!name || !email || !String(username || '').trim() || !role) {
     const error = new Error('name, email, username, and role are required');
@@ -929,9 +930,14 @@ const createAndInviteUser = asyncHandler(async (req, res) => {
   ensureUserManagementPermission(req, normalizedRole);
   const normalizedContactNumber = normalizeContactNumber(contactNumber);
   const scopedFields = applyRoleScopedFields({ role: normalizedRole, department, subject });
-  const studentFields = normalizeStudentFields({ role: normalizedRole, gradeLevel });
+  const studentFields = normalizeStudentFields({ role: normalizedRole });
   const studentSectionId = await resolveStudentSectionId(normalizedRole, sectionId);
   await ensureSingleHeadTeacherPerDepartment({
+    role: normalizedRole,
+    department: scopedFields.department,
+  });
+
+  const departmentHeadTeacher = await ensureTeacherDepartmentAvailable({
     role: normalizedRole,
     department: scopedFields.department,
   });
@@ -947,7 +953,7 @@ const createAndInviteUser = asyncHandler(async (req, res) => {
     department: scopedFields.department,
     gradeLevel: studentFields.gradeLevel,
     sectionId: studentSectionId,
-    managedBy: req.user._id,
+    managedBy: departmentHeadTeacher?._id || req.user._id,
     contactNumber: normalizedContactNumber,
     invite: {
       tokenHash: '',
@@ -991,7 +997,6 @@ const createUser = asyncHandler(async (req, res) => {
     contactNumber,
     department,
     subject,
-    gradeLevel,
     sectionId,
   } = req.body;
 
@@ -1014,9 +1019,13 @@ const createUser = asyncHandler(async (req, res) => {
   const normalizedUsername = String(username).trim();
   const normalizedContactNumber = normalizeContactNumber(contactNumber);
   const scopedFields = applyRoleScopedFields({ role: normalizedRole, department, subject });
-  const studentFields = normalizeStudentFields({ role: normalizedRole, gradeLevel });
+  const studentFields = normalizeStudentFields({ role: normalizedRole });
   const studentSectionId = await resolveStudentSectionId(normalizedRole, sectionId);
   await ensureSingleHeadTeacherPerDepartment({
+    role: normalizedRole,
+    department: scopedFields.department,
+  });
+  const departmentHeadTeacher = await ensureTeacherDepartmentAvailable({
     role: normalizedRole,
     department: scopedFields.department,
   });
@@ -1046,7 +1055,7 @@ const createUser = asyncHandler(async (req, res) => {
       department: scopedFields.department,
       gradeLevel: studentFields.gradeLevel,
       sectionId: studentSectionId,
-      managedBy: req.user._id,
+      managedBy: departmentHeadTeacher?._id || req.user._id,
       contactNumber: normalizedContactNumber,
       invite: {
         tokenHash: '',
