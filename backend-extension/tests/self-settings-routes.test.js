@@ -72,6 +72,7 @@ test('shared authentication routes do not expose an OTP preference endpoint', ()
     '../controllers/securityController': {},
     '../controllers/selfProfileController': {},
     '../controllers/adminSecurityController': {},
+    '../controllers/recaptchaSettingsController': {},
     '../middlewares/rateLimiters': {},
     '../utils/uploadMiddleware': { uploadProfileImage: { single: () => () => {} } },
   });

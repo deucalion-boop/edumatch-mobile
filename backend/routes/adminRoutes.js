@@ -28,6 +28,7 @@ const { getSectionDirectory } = require('../controllers/sectionController');
 const { accountSecurityLimiter, inviteLimiter, uploadLimiter } = require('../middlewares/rateLimiters');
 const { getAdminProfile, updateAdminProfile } = require('../controllers/adminProfileController');
 const { getAdminOtpSettings, saveAdminOtpSettings } = require('../controllers/adminSecurityController');
+const { getRecaptchaSettings, saveRecaptchaSettings } = require('../controllers/recaptchaSettingsController');
 const {
   getStudentAccountRequests,
   reviewStudentAccountRequest,
@@ -41,6 +42,8 @@ router.get('/profile', getAdminProfile);
 router.put('/profile', uploadLimiter, uploadProfileImage.single('profileImage'), updateAdminProfile);
 router.get('/settings/otp', getAdminOtpSettings);
 router.put('/settings/otp', accountSecurityLimiter, saveAdminOtpSettings);
+router.get('/settings/recaptcha', getRecaptchaSettings);
+router.put('/settings/recaptcha', accountSecurityLimiter, saveRecaptchaSettings);
 
 router.route('/users').post(createUser).get(getUsers);
 router.route('/users/:id').get(getUserById).put(uploadLimiter, uploadProfileImage.single('profileImage'), updateUser).delete(deleteUser);

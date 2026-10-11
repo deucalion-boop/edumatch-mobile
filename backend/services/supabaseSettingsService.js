@@ -20,6 +20,7 @@ function hydrateSettings(row) {
     key: 'global',
     user: { emailVerificationRequired: true },
     security: {
+      recaptchaEnabled: value.security?.recaptchaEnabled !== false,
       sessionTimeoutMinutes: boundedInteger(value.security?.sessionTimeoutMinutes, 120, 5, 1440),
       maxLoginAttempts: boundedInteger(value.security?.maxLoginAttempts, 5, 3, 10),
       accountLockoutDurationMinutes: boundedInteger(value.security?.accountLockoutDurationMinutes, 30, 1, 1440),
@@ -58,7 +59,7 @@ async function saveAppSettings(patch, updatedBy) {
     const current = hydrateSettings(previous);
     const value = { ...(previous?.value || {}) };
     for (const section of ['user', 'security', 'maintenance']) {
-      value[section] = { ...current[section], ...(patch[section] || {}) };
+      value[section] = { ...(previous?.value?.[section] || {}), ...current[section], ...(patch[section] || {}) };
     }
     value.user.emailVerificationRequired = true;
     const row = {

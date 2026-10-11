@@ -11,6 +11,16 @@ import { errorMessage } from '../api/client';
 import { Captcha } from './Captcha';
 import { useAuth } from './AuthProvider';
 import { LoginBranding, loginColors, loginFonts, loginGradient, LoginHero } from './LoginVisuals';
+import { requireRecaptchaForAttempt } from './loginSecurity';
+
+type PendingSignIn = {
+  attempt: number;
+  username: string;
+  password: string;
+  challengeToken?: string;
+  otpCode: string;
+  remember: boolean;
+};
 
 function secondsUntil(value: string | null, now: number): number | null {
   if (!value) return null;
@@ -44,6 +54,8 @@ export function LoginScreen() {
   const requestInFlight = useRef(false);
   const captchaOpen = useRef(false);
   const currentAttempt = useRef(0);
+  const pendingSignIn = useRef<PendingSignIn | null>(null);
+  const mounted = useRef(true);
   const usernameInput = useRef<TextInput>(null);
   const passwordInput = useRef<TextInput>(null);
   const expirySeconds = challenge ? secondsUntil(challenge.expiresAt, now) : null;
@@ -51,6 +63,13 @@ export function LoginScreen() {
   const canSignIn = !configurationError && !loading && (challenge ? code.length === 6 && expirySeconds !== 0 : !!username.trim() && !!password);
 
   useEffect(() => { if (recover === '1') setRecovering(true); }, [recover]);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false; currentAttempt.current += 1;
+      pendingSignIn.current = null; captchaOpen.current = false;
+    };
+  }, []);
   useEffect(() => {
     const show = Keyboard.addListener('keyboardDidShow', () => setKeyboardVisible(true));
     const hide = Keyboard.addListener('keyboardDidHide', () => setKeyboardVisible(false));
@@ -65,8 +84,31 @@ export function LoginScreen() {
     return () => { clearInterval(interval); appState.remove(); };
   }, [challenge]);
 
-  const closeCaptcha = () => { captchaOpen.current = false; setCaptcha(false); };
-  const openCaptcha = () => {
+  const closeCaptcha = () => {
+    captchaOpen.current = false; pendingSignIn.current = null;
+    currentAttempt.current += 1;
+    if (mounted.current) setCaptcha(false);
+  };
+  const completeSignIn = async (captchaToken: string, attempt: number) => {
+    const pending = pendingSignIn.current;
+    if (!mounted.current || !pending || pending.attempt !== attempt || attempt !== currentAttempt.current || !requestInFlight.current) return;
+    // Consume this submission before making a request, so repeated widget messages
+    // cannot sign in twice or reuse a completed attempt.
+    pendingSignIn.current = null; captchaOpen.current = false;
+    setCaptcha(false); setLoading(true); setError(null);
+    try {
+      const result = pending.challengeToken
+        ? await authApi.verifyOtp({ challengeToken: pending.challengeToken, otpCode: pending.otpCode, captchaToken })
+        : await authApi.login({ username: pending.username, password: pending.password, captchaToken, remember: pending.remember });
+      if (!mounted.current || attempt !== currentAttempt.current) return;
+      if ('requiresOtp' in result && result.requiresOtp) { setChallenge(result); setCode(''); setPassword(''); setShowPassword(false); setNotice(null); }
+      else if ('token' in result) await acceptSession(result, pending.remember);
+    } catch (caught) { if (mounted.current && attempt === currentAttempt.current) setError(errorMessage(caught)); }
+    finally {
+      if (mounted.current && attempt === currentAttempt.current) { requestInFlight.current = false; setLoading(false); }
+    }
+  };
+  const beginSignIn = async () => {
     if (loading || configurationError || requestInFlight.current || captchaOpen.current) return;
     if (!canSignIn) {
       setError(challenge ? expirySeconds === 0 ? 'This code has expired. Request a new code.' : 'Enter the six-digit verification code.' : !username.trim() ? 'Enter your username.' : 'Enter your password.');
@@ -75,23 +117,24 @@ export function LoginScreen() {
     }
     Keyboard.dismiss();
     setError(null); setNotice(null);
-    currentAttempt.current += 1;
-    setCaptchaAttempt(currentAttempt.current);
-    captchaOpen.current = true;
-    setCaptcha(true);
+    const attempt = ++currentAttempt.current;
+    pendingSignIn.current = { attempt, username: username.trim(), password, challengeToken: challenge?.challengeToken, otpCode: code, remember };
+    requestInFlight.current = true; setLoading(true);
+    // Fetch for every attempt: a school administrator may have changed the policy
+    // since the login screen opened or since the OTP email was sent.
+    const requiresCaptcha = await requireRecaptchaForAttempt(() => authApi.loginSecuritySettings());
+    if (!mounted.current || attempt !== currentAttempt.current) return;
+    if (requiresCaptcha) {
+      requestInFlight.current = false; setLoading(false);
+      setCaptchaAttempt(attempt); captchaOpen.current = true; setCaptcha(true);
+    } else {
+      await completeSignIn('', attempt);
+    }
   };
   const submit = async (captchaToken: string, attempt: number) => {
-    if (!captchaOpen.current || attempt !== currentAttempt.current || requestInFlight.current) return;
+    if (!mounted.current || !captchaOpen.current || attempt !== currentAttempt.current || requestInFlight.current) return;
     requestInFlight.current = true;
-    closeCaptcha(); setLoading(true); setError(null);
-    try {
-      const result = challenge
-        ? await authApi.verifyOtp({ challengeToken: challenge.challengeToken, otpCode: code, captchaToken })
-        : await authApi.login({ username: username.trim(), password, captchaToken, remember });
-      if ('requiresOtp' in result && result.requiresOtp) { setChallenge(result); setCode(''); setPassword(''); setShowPassword(false); setNotice(null); }
-      else if ('token' in result) await acceptSession(result, remember);
-    } catch (caught) { setError(errorMessage(caught)); }
-    finally { requestInFlight.current = false; setLoading(false); }
+    await completeSignIn(captchaToken, attempt);
   };
   const resend = async () => {
     if (!challenge || requestInFlight.current || captchaOpen.current || (resendSeconds !== null && resendSeconds > 0)) return;
@@ -128,12 +171,12 @@ export function LoginScreen() {
           {error && <LoginNotice message={error} error />}
           {notice && <LoginNotice message={notice} />}
           {recovering ? <LoginInput label="Email address" icon="mail-outline" value={email} onChangeText={setEmail} placeholder="you@example.com" keyboardType="email-address" autoCapitalize="none" autoCorrect={false} textContentType="emailAddress" autoComplete="email" editable={!loading} returnKeyType="send" onSubmitEditing={() => void recoverPassword()} /> : challenge ? <>
-            <LoginInput label="Verification code" icon="shield-checkmark-outline" value={code} onChangeText={value => setCode(value.replace(/\D/g, '').slice(0, 6))} placeholder="Enter 6-digit code" keyboardType="number-pad" textContentType="oneTimeCode" autoComplete="one-time-code" maxLength={6} editable={!loading} returnKeyType="done" onSubmitEditing={openCaptcha} />
+            <LoginInput label="Verification code" icon="shield-checkmark-outline" value={code} onChangeText={value => setCode(value.replace(/\D/g, '').slice(0, 6))} placeholder="Enter 6-digit code" keyboardType="number-pad" textContentType="oneTimeCode" autoComplete="one-time-code" maxLength={6} editable={!loading} returnKeyType="done" onSubmitEditing={() => void beginSignIn()} />
             {expirySeconds !== null && <Text accessibilityLiveRegion={expirySeconds === 0 ? 'polite' : 'none'} aria-live={expirySeconds === 0 ? 'polite' : 'off'} style={[styles.helper, expirySeconds === 0 && styles.expired]}>{expirySeconds > 0 ? `Code expires in ${expirySeconds}s` : 'This code has expired. Request a new code.'}</Text>}
             <TextAction title={resendSeconds !== null && resendSeconds > 0 ? `Resend code in ${resendSeconds}s` : 'Resend code'} disabled={loading || (resendSeconds !== null && resendSeconds > 0)} onPress={() => void resend()} />
           </> : <>
             <LoginInput inputRef={usernameInput} label="Username" icon="person-outline" value={username} onChangeText={setUsername} placeholder="Enter your username" autoCapitalize="none" autoCorrect={false} textContentType="username" autoComplete="username" editable={!loading} returnKeyType="next" onSubmitEditing={() => passwordInput.current?.focus()} />
-            <LoginInput inputRef={passwordInput} label="Password" icon="lock-closed-outline" value={password} onChangeText={setPassword} placeholder="Enter your password" secureTextEntry={!showPassword} textContentType="password" autoComplete="current-password" autoCapitalize="none" autoCorrect={false} editable={!loading} returnKeyType="done" onSubmitEditing={openCaptcha}
+            <LoginInput inputRef={passwordInput} label="Password" icon="lock-closed-outline" value={password} onChangeText={setPassword} placeholder="Enter your password" secureTextEntry={!showPassword} textContentType="password" autoComplete="current-password" autoCapitalize="none" autoCorrect={false} editable={!loading} returnKeyType="done" onSubmitEditing={() => void beginSignIn()}
               trailing={<Pressable accessibilityRole="button" accessibilityLabel={showPassword ? 'Hide password' : 'Show password'} accessibilityState={{ disabled: loading }} aria-disabled={loading} disabled={loading} onPress={() => setShowPassword(value => !value)} style={styles.passwordToggle}><Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={21} color={loginColors.deepGreen} /></Pressable>} />
             <View style={[styles.accountOptions, (compact || fontScale > 1.25) && styles.stackedOptions]}>
               <Pressable accessibilityRole="checkbox" accessibilityLabel="Remember Me" accessibilityHint="Keep this account signed in on this device" accessibilityState={{ checked: remember, disabled: loading }} aria-checked={remember} aria-disabled={loading} disabled={loading} onPress={() => setRemember(value => !value)} style={({ pressed }) => [styles.remember, pressed && { opacity: 0.7 }]}>
@@ -142,7 +185,7 @@ export function LoginScreen() {
               <TextAction title="Forgot Password?" disabled={loading} onPress={() => { setRecovering(true); setPassword(''); setShowPassword(false); setError(null); setNotice(null); }} />
             </View>
           </>}
-          <LoginAction title={recovering ? 'Send reset link' : challenge ? 'Verify code' : 'Log In'} loading={loading} loadingTitle={recovering ? 'Sending…' : challenge ? 'Verifying…' : 'Logging in…'} disabled={!!configurationError} onPress={recovering ? () => void recoverPassword() : openCaptcha} />
+          <LoginAction title={recovering ? 'Send reset link' : challenge ? 'Verify code' : 'Log In'} loading={loading} loadingTitle={recovering ? 'Sending…' : challenge ? 'Verifying…' : 'Logging in…'} disabled={!!configurationError} onPress={recovering ? () => void recoverPassword() : () => void beginSignIn()} />
           {(recovering || challenge) && <TextAction title="Back to Log In" icon="arrow-back-outline" disabled={loading} onPress={backToSignIn} />}
         </View>
       </View>
@@ -165,7 +208,7 @@ export function LoginScreen() {
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
-    {captcha && <Captcha key={captchaAttempt} visible onToken={token => void submit(token, captchaAttempt)} onClose={closeCaptcha} />}
+    {captcha && <Captcha key={captchaAttempt} visible onToken={token => void submit(token, captchaAttempt)} onClose={() => { if (captchaOpen.current && captchaAttempt === currentAttempt.current) closeCaptcha(); }} />}
   </SafeAreaView>;
 }
 

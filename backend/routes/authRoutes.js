@@ -16,9 +16,11 @@ const { inviteLimiter, loginLimiter, passwordResetLimiter, uploadLimiter } = req
 const { listSessions, logout, revokeSession } = require('../controllers/securityController');
 const { getMyProfile, updateMyProfile } = require('../controllers/selfProfileController');
 const { uploadProfileImage } = require('../utils/uploadMiddleware');
+const { getLoginSecuritySettings } = require('../controllers/recaptchaSettingsController');
 
 const router = express.Router();
 
+router.get('/login-security', getLoginSecuritySettings);
 router.post('/login', loginLimiter, login);
 router.post('/login/verify-otp', loginLimiter, verifyLoginOtp);
 router.post('/login/resend-otp', loginLimiter, resendLoginOtp);

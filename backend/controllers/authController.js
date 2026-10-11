@@ -270,7 +270,8 @@ const login = asyncHandler(async (req, res) => {
     throw error;
   }
 
-  const isCaptchaValid = await verifyRecaptchaToken({
+  const settings = await getAppSettings();
+  const isCaptchaValid = settings.security.recaptchaEnabled === false || await verifyRecaptchaToken({
     token: captchaToken,
     remoteIp: resolveClientIpAddress(req),
   });
@@ -323,7 +324,6 @@ const login = asyncHandler(async (req, res) => {
     throw error;
   }
 
-  const settings = await getAppSettings();
   const { maxLoginAttempts, accountLockoutDurationMinutes } = settings.security;
   const now = new Date();
   if (user.lockUntil && new Date(user.lockUntil).getTime() > now.getTime()) {
@@ -482,7 +482,9 @@ const verifyLoginOtp = asyncHandler(async (req, res) => {
     error.statusCode = 400;
     throw error;
   }
-  if (!await verifyRecaptchaToken({ token: req.body?.captchaToken, remoteIp: resolveClientIpAddress(req) })) {
+  const settings = await getAppSettings();
+  if (settings.security.recaptchaEnabled !== false
+    && !await verifyRecaptchaToken({ token: req.body?.captchaToken, remoteIp: resolveClientIpAddress(req) })) {
     const error = new Error('Please verify that you are not a robot');
     error.statusCode = 400;
     throw error;
@@ -511,7 +513,7 @@ const verifyLoginOtp = asyncHandler(async (req, res) => {
     throw error;
   }
   assertGmailEmail(user.email);
-  const { maintenanceModeEnabled, maintenanceMessage } = (await getAppSettings()).maintenance;
+  const { maintenanceModeEnabled, maintenanceMessage } = settings.maintenance;
   if (maintenanceModeEnabled && String(user.role || '').toLowerCase() !== 'admin') {
     const error = new Error(maintenanceMessage);
     error.statusCode = 503;

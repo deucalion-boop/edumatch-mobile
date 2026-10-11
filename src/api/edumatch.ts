@@ -5,9 +5,9 @@ import type {
   AttendanceFilters, AttendanceOverview, AttendanceRecord, AttendanceRoster,
   AttendanceScanResult, AttendanceSession, AttendanceSessionDetail, AttendanceSessionQr,
   AttendanceStatus, AuthSession, CreateAttendanceSessionInput, CreateUserInput,
-  Dashboard, DataRow, Lesson, ListFilters, LoginChallenge, LoginInput, LoginResult,
+  Dashboard, DataRow, Lesson, ListFilters, LoginChallenge, LoginInput, LoginResult, LoginSecuritySettings,
   Notification, Paginated, PublishAnnouncementInput, ResourceItem, ReviewGradeInput,
-  Role, SaveAttendanceInput, Section, Subject, User, VerifyOtpInput,
+  RecaptchaSettings, Role, SaveAttendanceInput, Section, Subject, User, VerifyOtpInput,
 } from './types';
 
 const roles = new Set<Role>(['admin', 'secretary', 'headteacher', 'teacher', 'student']);
@@ -51,6 +51,11 @@ function normalizeOtpSettings(value: unknown): AdminOtpSettings {
   const settings = object(value);
   if (typeof settings.enabled !== 'boolean' || settings.scope !== 'account') throw new Error('The server returned invalid OTP settings.');
   return { enabled: settings.enabled, scope: 'account' };
+}
+function normalizeRecaptchaSettings(value: unknown): RecaptchaSettings {
+  const settings = object(value);
+  if (typeof settings.enabled !== 'boolean' || settings.scope !== 'school') throw new Error('The server returned invalid reCAPTCHA settings.');
+  return { enabled: settings.enabled, scope: 'school' };
 }
 function otpUpdateBody(input: { enabled: boolean; currentPassword: string }) {
   if (typeof input.enabled !== 'boolean' || typeof input.currentPassword !== 'string' || !input.currentPassword) {
@@ -210,6 +215,12 @@ function filterItems<T extends { raw?: DataRow; name?: string; role?: Role; stat
 }
 
 export const authApi = {
+  async loginSecuritySettings(): Promise<LoginSecuritySettings> {
+    const data = await get('/auth/login-security');
+    const settings = object(data.settings);
+    if (typeof settings.recaptchaEnabled !== 'boolean') throw new Error('The server returned invalid sign-in security settings.');
+    return { recaptchaEnabled: settings.recaptchaEnabled };
+  },
   async login(input: LoginInput): Promise<LoginResult> {
     return normalizeLogin((await api.post('/auth/login', input)).data);
   },
@@ -263,6 +274,15 @@ export const edumatchApi = {
   },
   async updateAdminOtpSettings(input: { enabled: boolean; currentPassword: string }): Promise<AdminOtpSettings> {
     return normalizeOtpSettings((await put('/admin/settings/otp', otpUpdateBody(input))).settings);
+  },
+  async recaptchaSettings(): Promise<RecaptchaSettings> {
+    return normalizeRecaptchaSettings((await get('/admin/settings/recaptcha')).settings);
+  },
+  async updateRecaptchaSettings(input: { enabled: boolean; currentPassword: string }): Promise<RecaptchaSettings> {
+    if (typeof input.enabled !== 'boolean' || typeof input.currentPassword !== 'string' || !input.currentPassword) {
+      throw new Error('Choose a reCAPTCHA setting and enter your current password.');
+    }
+    return normalizeRecaptchaSettings((await put('/admin/settings/recaptcha', { enabled: input.enabled, currentPassword: input.currentPassword })).settings);
   },
   async users(role: Role, filters?: ListFilters): Promise<User[]> {
     let data: DataRow;

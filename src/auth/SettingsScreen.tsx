@@ -57,6 +57,11 @@ export function SettingsScreen() {
   const [otpBusy, setOtpBusy] = useState(false);
   const [otpFailure, setOtpFailure] = useState<string | null>(null);
   const [otpMessage, setOtpMessage] = useState<string | null>(null);
+  const [recaptchaChoice, setRecaptchaChoice] = useState<boolean | null>(null);
+  const [recaptchaPassword, setRecaptchaPassword] = useState('');
+  const [recaptchaBusy, setRecaptchaBusy] = useState(false);
+  const [recaptchaFailure, setRecaptchaFailure] = useState<string | null>(null);
+  const [recaptchaMessage, setRecaptchaMessage] = useState<string | null>(null);
   const [notificationBusy, setNotificationBusy] = useState(false);
   const [notificationMessage, setNotificationMessage] = useState<string | null>(null);
   const [notificationFailure, setNotificationFailure] = useState<string | null>(null);
@@ -70,19 +75,24 @@ export function SettingsScreen() {
   const isCurrent = (snapshot: typeof accountSnapshot.current) => mounted.current && Boolean(snapshot.id) && accountSnapshot.current === snapshot;
   const profileKey = ['account-profile', accountId];
   const otpKey = ['admin-otp-settings', accountId];
+  const recaptchaKey = ['school-recaptcha-settings', accountId];
   const settingsAvailable = Boolean(user && !user.forcePasswordChange);
   const canChangeOtp = settingsAvailable && user?.role === 'admin';
+  const canChangeRecaptcha = settingsAvailable && user?.role === 'admin';
   const profileQuery = useQuery({ queryKey: profileKey, queryFn: () => authApi.profile(), enabled: settingsAvailable && section === 'profile', staleTime: 20_000 });
   const otpQuery = useQuery({ queryKey: otpKey, queryFn: () => edumatchApi.adminOtpSettings(), enabled: canChangeOtp && section === 'security', staleTime: 0 });
+  const recaptchaQuery = useQuery({ queryKey: recaptchaKey, queryFn: () => edumatchApi.recaptchaSettings(), enabled: canChangeRecaptcha && section === 'security', staleTime: 0 });
   const profile = profileQuery.data || user;
   const profileName = profile?.name || '';
   const profileEmail = profile?.email || '';
   const draftName = detailsDraft?.name ?? profileName;
   const draftEmail = detailsDraft?.email ?? profileEmail;
   const detailsChanged = draftName.trim() !== profileName || draftEmail.trim().toLowerCase() !== profileEmail.trim().toLowerCase();
-  const busy = photoBusy || pickerBusy || detailsBusy || passwordBusy || otpBusy || notificationBusy || signOutBusy;
+  const busy = photoBusy || pickerBusy || detailsBusy || passwordBusy || otpBusy || recaptchaBusy || notificationBusy || signOutBusy;
   const desiredOtp = otpChoice ?? otpQuery.data?.enabled;
   const otpChanged = otpQuery.data !== undefined && desiredOtp !== otpQuery.data.enabled;
+  const desiredRecaptcha = recaptchaChoice ?? recaptchaQuery.data?.enabled;
+  const recaptchaChanged = recaptchaQuery.data !== undefined && desiredRecaptcha !== recaptchaQuery.data.enabled;
 
   useEffect(() => {
     mounted.current = true;
@@ -93,9 +103,10 @@ export function SettingsScreen() {
     setDetailsDraft(null); setDetailsBusy(false); setDetailsFailure(null); setDetailsMessage(null);
     setCurrentPassword(''); setNewPassword(''); setConfirmPassword(''); setPasswordFailure(null);
     setOtpChoice(null); setOtpPassword(''); setOtpFailure(null); setOtpMessage(null);
+    setRecaptchaChoice(null); setRecaptchaPassword(''); setRecaptchaFailure(null); setRecaptchaMessage(null);
     setNotificationMessage(null); setNotificationFailure(null);
     setPhotoBusy(false); setPickerBusy(false); setPasswordBusy(false);
-    setOtpBusy(false); setNotificationBusy(false); setSignOutBusy(false);
+    setOtpBusy(false); setRecaptchaBusy(false); setNotificationBusy(false); setSignOutBusy(false);
   }, [accountId]);
 
   async function choosePhoto() {
@@ -205,6 +216,21 @@ export function SettingsScreen() {
     finally { if (isCurrent(snapshot)) setOtpBusy(false); }
   }
 
+  async function saveRecaptcha() {
+    const snapshot = accountSnapshot.current;
+    if (!canChangeRecaptcha || busy || !isCurrent(snapshot) || recaptchaQuery.isFetching || !recaptchaChanged || typeof desiredRecaptcha !== 'boolean' || !recaptchaPassword) return;
+    setRecaptchaBusy(true); setRecaptchaFailure(null); setRecaptchaMessage(null);
+    try {
+      await client.cancelQueries({ queryKey: recaptchaKey, exact: true });
+      if (!isCurrent(snapshot)) return;
+      const updated = await edumatchApi.updateRecaptchaSettings({ enabled: desiredRecaptcha, currentPassword: recaptchaPassword });
+      if (!isCurrent(snapshot)) return;
+      client.setQueryData(recaptchaKey, updated); setRecaptchaChoice(null); setRecaptchaPassword('');
+      setRecaptchaMessage(updated.enabled ? 'reCAPTCHA is on for everyone signing in.' : 'reCAPTCHA is off for everyone signing in.');
+    } catch (error) { if (isCurrent(snapshot)) setRecaptchaFailure(errorMessage(error)); }
+    finally { if (isCurrent(snapshot)) setRecaptchaBusy(false); }
+  }
+
   async function enableNotifications() {
     const snapshot = accountSnapshot.current;
     if (busy || !isCurrent(snapshot)) return;
@@ -227,6 +253,7 @@ export function SettingsScreen() {
   function open(next: SettingsSection) {
     setCurrentPassword(''); setNewPassword(''); setConfirmPassword(''); setPasswordFailure(null);
     setOtpPassword(''); setOtpChoice(null); setOtpFailure(null); setOtpMessage(null);
+    setRecaptchaPassword(''); setRecaptchaChoice(null); setRecaptchaFailure(null); setRecaptchaMessage(null);
     setSection(next);
   }
 
@@ -239,7 +266,7 @@ export function SettingsScreen() {
     {section === 'home' ? <>
       <Card><View style={settingsStyles.identity}><ProfilePhoto name={profile?.name || user.name} uri={profile?.profileImage} /><View style={{ flex: 1, minWidth: 0 }}><Text style={styles.heading}>{profile?.name || user.name}</Text><Text style={styles.bodyMuted}>{ROLE_LABELS[user.role]}</Text><Text style={styles.bodyMuted}>{profile?.email || user.email}</Text></View></View></Card>
       <SettingsEntry title="Profile" detail="Update your name, email, and profile picture." icon="person-circle-outline" disabled={busy} onPress={() => open('profile')} />
-      <SettingsEntry title="Security" detail={canChangeOtp ? 'Change your password and turn sign-in OTP on or off.' : 'Change your account password.'} icon="shield-checkmark-outline" disabled={busy} onPress={() => open('security')} />
+      <SettingsEntry title="Security" detail={canChangeOtp ? 'Change your password, your OTP setting, and school reCAPTCHA.' : 'Change your account password.'} icon="shield-checkmark-outline" disabled={busy} onPress={() => open('security')} />
       <Card><Heading title="School notifications" detail="Receive announcements and school updates on this device." />
         {notificationFailure ? <Notice tone="error" message={notificationFailure} /> : null}
         {notificationMessage ? <Notice message={notificationMessage} /> : null}
@@ -287,6 +314,17 @@ export function SettingsScreen() {
           {otpFailure ? <Notice tone="error" message={otpFailure} /> : null}
           {otpMessage ? <Notice tone="success" message={otpMessage} /> : null}
           {otpChanged ? <><Button title="Save OTP setting" loading={otpBusy} disabled={(busy && !otpBusy) || otpQuery.isFetching || !otpPassword} onPress={() => void saveOtp()} /><Button title="Cancel OTP change" variant="plain" disabled={busy} onPress={() => { setOtpChoice(null); setOtpPassword(''); setOtpFailure(null); }} /></> : null}
+        </> : null}
+      </Card> : null}
+      {canChangeRecaptcha ? <Card><Heading title="School reCAPTCHA" detail="Control the reCAPTCHA security check for everyone signing in to the school app." />
+        <QueryStatus loading={recaptchaQuery.isPending} error={recaptchaQuery.error} retry={() => void recaptchaQuery.refetch()} />
+        {recaptchaQuery.data && !recaptchaQuery.error ? <>
+          <View style={styles.between}><View style={{ flex: 1, gap: 4 }}><Text style={styles.heading}>reCAPTCHA {desiredRecaptcha ? 'on' : 'off'}</Text><Text style={styles.bodyMuted}>Currently saved: {recaptchaQuery.data.enabled ? 'On' : 'Off'}</Text></View><Switch accessibilityLabel="reCAPTCHA for everyone signing in" value={Boolean(desiredRecaptcha)} onValueChange={enabled => { setRecaptchaChoice(enabled); setRecaptchaFailure(null); setRecaptchaMessage(null); }} disabled={busy || recaptchaQuery.isFetching} trackColor={{ false: colors.border, true: colors.primary }} thumbColor="#FFFFFF" /></View>
+          {recaptchaChanged && desiredRecaptcha === false ? <Notice message="Turning reCAPTCHA off removes this security check for all accounts. Each account's OTP requirements stay the same." /> : null}
+          {recaptchaChanged ? <Field label="Current password to confirm reCAPTCHA change" value={recaptchaPassword} onChangeText={setRecaptchaPassword} editable={!busy} secureTextEntry textContentType="password" autoCapitalize="none" autoCorrect={false} /> : null}
+          {recaptchaFailure ? <Notice tone="error" message={recaptchaFailure} /> : null}
+          {recaptchaMessage ? <Notice tone="success" message={recaptchaMessage} /> : null}
+          {recaptchaChanged ? <><Button title="Save reCAPTCHA setting" loading={recaptchaBusy} disabled={(busy && !recaptchaBusy) || recaptchaQuery.isFetching || !recaptchaPassword} onPress={() => void saveRecaptcha()} /><Button title="Cancel reCAPTCHA change" variant="plain" disabled={busy} onPress={() => { setRecaptchaChoice(null); setRecaptchaPassword(''); setRecaptchaFailure(null); }} /></> : null}
         </> : null}
       </Card> : null}
     </> : null}

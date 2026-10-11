@@ -130,6 +130,44 @@ test('missing confirmation and invalid OTP settings fail visibly', async () => {
   }
 });
 
+test('reCAPTCHA preference is school scoped and only submits enabled plus the administrator password', async () => {
+  const { edumatchApi, requests } = await transport(request => ({ success: true, settings: {
+    enabled: request.method === 'put' ? JSON.parse(request.data).enabled : true,
+    scope: 'school', secret: 'never-cache-this',
+  } }));
+  assert.deepEqual(await edumatchApi.recaptchaSettings(), { enabled: true, scope: 'school' });
+  assert.deepEqual(await edumatchApi.updateRecaptchaSettings({ enabled: false, currentPassword: ' current password ', id: 'other-admin', scope: 'account' } as { enabled: boolean; currentPassword: string }), { enabled: false, scope: 'school' });
+  assert.deepEqual(JSON.parse(requests[1]?.data), { enabled: false, currentPassword: ' current password ' });
+  assert.deepEqual(requests.map(request => [request.method, request.url]), [['get', '/admin/settings/recaptcha'], ['put', '/admin/settings/recaptcha']]);
+});
+
+test('reCAPTCHA settings reject malformed responses and missing password confirmation', async () => {
+  const { edumatchApi, requests } = await transport(() => ({ success: true, settings: { enabled: true, scope: 'school' } }));
+  await assert.rejects(() => edumatchApi.updateRecaptchaSettings({ enabled: false, currentPassword: '' }), /current password/);
+  await assert.rejects(() => edumatchApi.updateRecaptchaSettings({ enabled: 'false' as unknown as boolean, currentPassword: 'secret' }), /reCAPTCHA setting/);
+  assert.equal(requests.length, 0);
+  for (const settings of [undefined, {}, { enabled: 'false', scope: 'school' }, { enabled: false, scope: 'account' }]) {
+    const invalid = await transport(() => ({ success: true, settings }));
+    await assert.rejects(() => invalid.edumatchApi.recaptchaSettings(), /invalid reCAPTCHA/);
+    await assert.rejects(() => invalid.edumatchApi.updateRecaptchaSettings({ enabled: false, currentPassword: 'secret' }), /invalid reCAPTCHA/);
+  }
+});
+
+test('public login security preserves explicit reCAPTCHA Off and exposes no other school security settings', async () => {
+  const { authApi, requests } = await transport(() => ({ success: true, settings: { recaptchaEnabled: false, secret: 'private', sessionTimeoutMinutes: 120 } }));
+  const [{ setAccessToken }] = await modules;
+  setAccessToken(null);
+  assert.deepEqual(await authApi.loginSecuritySettings(), { recaptchaEnabled: false });
+  assert.equal(requests[0]?.url, '/auth/login-security');
+  assert.equal(requests[0]?.method, 'get');
+  assert.equal(requests[0]?.headers.Authorization, undefined);
+  assert.equal(requests[0]?.headers['Cache-Control'], undefined);
+  for (const settings of [undefined, {}, { recaptchaEnabled: 'false' }, { recaptchaEnabled: 0 }]) {
+    const invalid = await transport(() => ({ success: true, settings }));
+    await assert.rejects(() => invalid.authApi.loginSecuritySettings(), /invalid sign-in security/);
+  }
+});
+
 test('an admin login without an OTP challenge still accepts the authenticated session and forced password state', async () => {
   const { authApi, requests } = await transport(() => ({ success: true, requiresOtp: false, token: 'password-authenticated-jwt', user: { ...admin, forcePasswordChange: true } }));
   const result = await authApi.login({ username: 'principal', password: 'secret', captchaToken: 'captcha', remember: true });
