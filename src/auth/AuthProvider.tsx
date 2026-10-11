@@ -12,6 +12,7 @@ type AuthContextValue = {
   acceptSession: (result: AuthSession, persistSession?: boolean) => Promise<void>;
   signOut: () => Promise<void>;
   retryBootstrap: () => Promise<void>;
+  refreshProfile: () => Promise<User>;
 };
 const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: PropsWithChildren) {
@@ -73,12 +74,25 @@ export function AuthProvider({ children }: PropsWithChildren) {
     setAccessToken(result.token); setBootstrapError(null); setUser(normalized); setLoading(false);
   }, [writeSession]);
   const signOut = useCallback(async () => {
+    const epoch = authEpoch.current;
     // Best effort server cleanup; device delivery also checks the active JWT session.
     try { await unregisterDevice(); } catch { /* Logout must remain possible offline. */ }
+    if (epoch !== authEpoch.current) return;
     try { await authApi.logout(); } catch { /* Cached private data is cleared locally. */ }
+    if (epoch !== authEpoch.current) return;
     await clear();
   }, [clear]);
-  return <AuthContext.Provider value={{ user, loading, bootstrapError, acceptSession, signOut, retryBootstrap }}>{children}</AuthContext.Provider>;
+  const refreshProfile = useCallback(async () => {
+    if (!user) throw new Error('Sign in to update your profile.');
+    const epoch = authEpoch.current;
+    const refreshed = await authApi.me();
+    if (epoch !== authEpoch.current || refreshed.id !== user.id || refreshed.role !== user.role) {
+      throw new Error('Your account changed while refreshing the profile.');
+    }
+    setUser(refreshed);
+    return refreshed;
+  }, [user]);
+  return <AuthContext.Provider value={{ user, loading, bootstrapError, acceptSession, signOut, retryBootstrap, refreshProfile }}>{children}</AuthContext.Provider>;
 }
 export function useAuth() {
   const context = useContext(AuthContext);

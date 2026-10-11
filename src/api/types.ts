@@ -1,6 +1,7 @@
 /** Canonical server roles. Principal accounts use the admin role. */
 export type Role = 'admin' | 'secretary' | 'headteacher' | 'teacher' | 'student';
 export type DataRow = Record<string, unknown>;
+export interface AdminOtpSettings { enabled: boolean; scope: 'account' }
 export type AttendanceStatus = 'Present' | 'Late' | 'Absent' | 'Excused';
 export type AttendanceScope = 'handled_class' | 'advisory_class';
 

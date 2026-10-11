@@ -12,7 +12,8 @@ api.interceptors.request.use((config) => {
   return config;
 });
 api.interceptors.response.use((response) => response, (error: unknown) => {
-  if (axios.isAxiosError(error) && error.response?.status === 401 && error.config?.headers.Authorization && error.config.url !== '/auth/change-password') {
+  if (axios.isAxiosError(error) && error.response?.status === 401 && token
+    && error.config?.headers.Authorization === `Bearer ${token}` && error.config.url !== '/auth/change-password') {
     sessionExpired?.();
   }
   return Promise.reject(error);

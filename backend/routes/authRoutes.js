@@ -12,8 +12,10 @@ const {
   completePasswordReset,
 } = require('../controllers/authController');
 const { changePassword } = require('../controllers/passwordController');
-const { inviteLimiter, loginLimiter, passwordResetLimiter } = require('../middlewares/rateLimiters');
+const { inviteLimiter, loginLimiter, passwordResetLimiter, uploadLimiter } = require('../middlewares/rateLimiters');
 const { listSessions, logout, revokeSession } = require('../controllers/securityController');
+const { getMyProfile, updateMyProfile } = require('../controllers/selfProfileController');
+const { uploadProfileImage } = require('../utils/uploadMiddleware');
 
 const router = express.Router();
 
@@ -22,6 +24,8 @@ router.post('/login/verify-otp', loginLimiter, verifyLoginOtp);
 router.post('/login/resend-otp', loginLimiter, resendLoginOtp);
 router.post('/presence', authMiddleware, syncPresence);
 router.post('/change-password', authMiddleware, changePassword);
+router.get('/profile', authMiddleware, getMyProfile);
+router.put('/profile', authMiddleware, uploadLimiter, uploadProfileImage.single('profileImage'), updateMyProfile);
 router.get('/invite/:token', inviteLimiter, validateInvite);
 router.post('/invite/:token/complete', inviteLimiter, completeInvite);
 router.post('/forgot-password', passwordResetLimiter, requestPasswordReset);

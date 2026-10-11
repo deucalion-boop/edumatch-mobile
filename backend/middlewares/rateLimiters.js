@@ -119,6 +119,13 @@ const inviteLimiter = buildLimiter({
   message: 'Too many invite requests. Please try again later.',
 });
 
+const accountSecurityLimiter = buildLimiter({
+  prefix: 'account-security',
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  message: 'Too many security-setting attempts. Please try again later.',
+});
+
 const uploadLimiter = buildLimiter({
   prefix: 'upload',
   windowMs: 60 * 60 * 1000,
@@ -134,6 +141,7 @@ const aiLimiter = buildLimiter({
 });
 
 module.exports = {
+  accountSecurityLimiter,
   apiRateLimitKey,
   buildLimiter,
   aiLimiter,

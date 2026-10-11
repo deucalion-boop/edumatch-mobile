@@ -7,6 +7,7 @@ const { sendEmailViaGmail } = require('../services/gmailService');
 const { assertPasswordMeetsPolicy, PASSWORD_MIN_LENGTH, PASSWORD_MAX_LENGTH } = require('../utils/passwordPolicy');
 const { resolveStoredFileUrl } = require('../utils/fileStorage');
 const { getAppSettings } = require('../services/supabaseSettingsService');
+const { getAdminLoginOtpEnabled } = require('../services/adminSecurityService');
 const { findAccountByLoginIdentifier } = require('../utils/loginIdentifier');
 const {
   findSupabaseAccount,
@@ -397,6 +398,27 @@ const login = asyncHandler(async (req, res) => {
   await user.save();
 
   assertGmailEmail(user.email);
+
+  if (user.role === 'admin' && !await getAdminLoginOtpEnabled(user._id)) {
+    await consumeOpenChallenges(user._id);
+    const signedInAt = new Date();
+    user.lastLoginAt = signedInAt;
+    user.lastActivityAt = signedInAt;
+    await user.save();
+    await recordLoginAttempt(req, {
+      username: user.username,
+      user,
+      outcome: 'success',
+      reason: 'Login successful (admin OTP disabled)',
+    });
+    const token = await createSessionAndSignToken(user, req, rememberSession);
+    return sendSuccess(res, 200, 'Login successful', {
+      requiresOtp: false,
+      token,
+      redirectPath: user.forcePasswordChange ? '/auth/change-password' : undefined,
+      user: buildLoginUser(user, req),
+    });
+  }
 
   const challenge = await issueLoginOtp(user, req, rememberSession);
   return sendSuccess(res, 202, 'Verification code sent', {

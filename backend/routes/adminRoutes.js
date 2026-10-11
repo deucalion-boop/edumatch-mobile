@@ -25,7 +25,9 @@ const {
 } = require('../controllers/adminController');
 const { getAdminAttendanceReport } = require('../controllers/attendanceController');
 const { getSectionDirectory } = require('../controllers/sectionController');
-const { inviteLimiter, uploadLimiter } = require('../middlewares/rateLimiters');
+const { accountSecurityLimiter, inviteLimiter, uploadLimiter } = require('../middlewares/rateLimiters');
+const { getAdminProfile, updateAdminProfile } = require('../controllers/adminProfileController');
+const { getAdminOtpSettings, saveAdminOtpSettings } = require('../controllers/adminSecurityController');
 const {
   getStudentAccountRequests,
   reviewStudentAccountRequest,
@@ -34,6 +36,11 @@ const {
 const router = express.Router();
 
 router.use(authMiddleware, roleMiddleware('admin'));
+
+router.get('/profile', getAdminProfile);
+router.put('/profile', uploadLimiter, uploadProfileImage.single('profileImage'), updateAdminProfile);
+router.get('/settings/otp', getAdminOtpSettings);
+router.put('/settings/otp', accountSecurityLimiter, saveAdminOtpSettings);
 
 router.route('/users').post(createUser).get(getUsers);
 router.route('/users/:id').get(getUserById).put(uploadLimiter, uploadProfileImage.single('profileImage'), updateUser).delete(deleteUser);

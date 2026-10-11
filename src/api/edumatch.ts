@@ -1,7 +1,7 @@
 import { api } from './client';
 import { isGradeTenStudent } from '../auth/studentAccess';
 import type {
-  ActivityResponseInput, AiCreatorRole, AiUsageAnalytics, AiUsageDays, Approval, Assessment, AssessmentWeights, Attachment,
+  ActivityResponseInput, AdminOtpSettings, AiCreatorRole, AiUsageAnalytics, AiUsageDays, Approval, Assessment, AssessmentWeights, Attachment,
   AttendanceFilters, AttendanceOverview, AttendanceRecord, AttendanceRoster,
   AttendanceScanResult, AttendanceSession, AttendanceSessionDetail, AttendanceSessionQr,
   AttendanceStatus, AuthSession, CreateAttendanceSessionInput, CreateUserInput,
@@ -37,6 +37,26 @@ async function patch(path: string, body: unknown = {}): Promise<DataRow> {
 }
 async function put(path: string, body: unknown): Promise<DataRow> {
   return envelope((await api.put(path, body)).data);
+}
+
+type ProfileUpdateInput = FormData | { name: string; email: string };
+function profileUpdateBody(input: ProfileUpdateInput): ProfileUpdateInput {
+  if (input instanceof FormData) return input;
+  const name = typeof input?.name === 'string' ? input.name.trim() : '';
+  const email = typeof input?.email === 'string' ? input.email.trim().toLowerCase() : '';
+  if (!name || !email) throw new Error('Enter your name and email.');
+  return { name, email };
+}
+function normalizeOtpSettings(value: unknown): AdminOtpSettings {
+  const settings = object(value);
+  if (typeof settings.enabled !== 'boolean' || settings.scope !== 'account') throw new Error('The server returned invalid OTP settings.');
+  return { enabled: settings.enabled, scope: 'account' };
+}
+function otpUpdateBody(input: { enabled: boolean; currentPassword: string }) {
+  if (typeof input.enabled !== 'boolean' || typeof input.currentPassword !== 'string' || !input.currentPassword) {
+    throw new Error('Choose an OTP setting and enter your current password.');
+  }
+  return { enabled: input.enabled, currentPassword: input.currentPassword };
 }
 
 export function normalizeRole(value: unknown): Role {
@@ -204,6 +224,10 @@ export const authApi = {
     return result;
   },
   async me(): Promise<User> { return normalizeUser((await get('/mobile/me')).user); },
+  async profile(): Promise<User> { return normalizeUser((await get('/auth/profile')).user); },
+  async updateProfile(input: ProfileUpdateInput): Promise<User> {
+    return normalizeUser((await put('/auth/profile', profileUpdateBody(input))).user);
+  },
   async logout(): Promise<void> { await post('/auth/logout'); },
   async presence(): Promise<void> { await post('/auth/presence'); },
   async changePassword(input: { currentPassword: string; newPassword: string; confirmNewPassword: string }): Promise<void> {
@@ -224,6 +248,22 @@ export const notificationApi = {
 };
 
 export const edumatchApi = {
+  async adminProfile(): Promise<User> {
+    const user = normalizeUser((await get('/admin/profile')).user);
+    if (user.role !== 'admin') throw new Error('The server returned an invalid admin profile.');
+    return user;
+  },
+  async updateAdminProfile(input: ProfileUpdateInput): Promise<User> {
+    const user = normalizeUser((await put('/admin/profile', profileUpdateBody(input))).user);
+    if (user.role !== 'admin') throw new Error('The server returned an invalid admin profile.');
+    return user;
+  },
+  async adminOtpSettings(): Promise<AdminOtpSettings> {
+    return normalizeOtpSettings((await get('/admin/settings/otp')).settings);
+  },
+  async updateAdminOtpSettings(input: { enabled: boolean; currentPassword: string }): Promise<AdminOtpSettings> {
+    return normalizeOtpSettings((await put('/admin/settings/otp', otpUpdateBody(input))).settings);
+  },
   async users(role: Role, filters?: ListFilters): Promise<User[]> {
     let data: DataRow;
     let key: string;

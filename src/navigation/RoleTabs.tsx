@@ -11,12 +11,13 @@ export function RoleTabs({ role }: { role: Role }) {
   const { width, fontScale } = useWindowDimensions();
   const compactLabels = width < 360 || fontScale > 1.25;
   const recordsTitle = role === 'student' ? 'Records' : featureNames.records;
-  const labels: Record<string, string> = { index: 'Home', workspace: 'Workspace', records: recordsTitle, announcements: 'Updates', account: 'Account' };
-  const shortLabels: Record<string, string> = { index: 'Home', workspace: 'Tools', records: role === 'student' ? 'Files' : 'Users', announcements: 'News', account: 'Me' };
+  const accountTitle = 'Settings';
+  const labels: Record<string, string> = { index: 'Home', workspace: 'Workspace', records: recordsTitle, announcements: 'Updates', account: accountTitle };
+  const shortLabels: Record<string, string> = { index: 'Home', workspace: 'Tools', records: role === 'student' ? 'Files' : 'Users', announcements: 'News', account: 'Settings' };
   if (!user) return <Redirect href="/login" />;
   if (user.forcePasswordChange) return <Redirect href="/password" />;
   if (user.role !== role) return <Redirect href={`/${user.role}`} />;
-  const icons: Record<string, React.ComponentProps<typeof Ionicons>['name']> = { index: 'grid-outline', workspace: 'school-outline', records: 'folder-open-outline', announcements: 'megaphone-outline', account: 'person-circle-outline' };
+  const icons: Record<string, React.ComponentProps<typeof Ionicons>['name']> = { index: 'grid-outline', workspace: 'school-outline', records: 'folder-open-outline', announcements: 'megaphone-outline', account: 'settings-outline' };
   return <Tabs screenOptions={({ route }) => ({ headerShown: false, tabBarActiveTintColor: colors.darkGreen, tabBarInactiveTintColor: colors.muted,
     tabBarActiveBackgroundColor: colors.pale,
     tabBarLabel: route.name === 'records' && role !== 'student' ? 'Users' : compactLabels ? shortLabels[route.name] : labels[route.name],
@@ -29,7 +30,7 @@ export function RoleTabs({ role }: { role: Role }) {
     <Tabs.Screen name="workspace" options={{ title: 'Workspace' }} />
     <Tabs.Screen name="records" options={{ title: recordsTitle }} />
     <Tabs.Screen name="announcements" options={{ title: 'Updates' }} />
-    <Tabs.Screen name="account" options={{ title: 'Account' }} />
+    <Tabs.Screen name="account" options={{ title: accountTitle }} />
     <Tabs.Screen name="[feature]" options={{ href: null }} />
   </Tabs>;
 }

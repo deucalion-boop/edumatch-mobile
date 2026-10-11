@@ -16,6 +16,9 @@ const CATEGORY_LABELS = {
 };
 
 const ACTION_LABELS = {
+  'PUT /api/admin/profile': 'Admin profile updated',
+  'PUT /api/admin/settings/otp': 'Admin login OTP setting updated',
+  'PUT /api/auth/profile': 'Account profile updated',
   'POST /api/auth/login': 'User login',
   'POST /api/auth/change-password': 'Password changed',
   'POST /api/auth/invite/:token/complete': 'Invite completed',
