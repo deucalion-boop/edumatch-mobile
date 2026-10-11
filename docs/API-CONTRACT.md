@@ -30,7 +30,7 @@ The existing browser invitation and password reset routes remain compatible: `GE
 | Role | Method and route | Request / response |
 | --- | --- | --- |
 | Admin, Secretary | `GET /:role/users` | `{ users }`; visibility is constrained by the backend user management policy. This endpoint is not paginated; mobile search/status/department filtering is local. |
-| Admin, Secretary | `POST /:role/users` | `{ name, email, username?, role, contactNumber?, department?, subject?, gradeLevel?, sectionId?, advisorySectionId? }` → `{ user, invite? }`. Server validates role and assignments. New students start with an empty strand; legacy strand input is ignored. Department is required for teachers and head teachers and ignored for secretaries. |
+| Admin, Secretary | `POST /:role/users` | `{ name, email, username, role, contactNumber?, department?, subject?, gradeLevel?, sectionId?, advisorySectionId? }` → `{ user, invite? }`. Server validates role and assignments. New students start with an empty strand; legacy strand input is ignored. Department is required for teachers and head teachers and ignored for secretaries. |
 | Admin, Secretary | `GET /:role/users/:id` | `{ user }`, with additional learning insights for a student. |
 | Admin, Secretary | `PUT /:role/users/:id` | Editable user fields; optional multipart `profileImage` → `{ user }`. |
 | Admin, Secretary | `POST /:role/users/:id/messages` | `{ subject, content, urgent? }` → `{ messageRecord, notification }`; recipient is a **user ID**, not a section ID. |
@@ -58,8 +58,8 @@ Secretary cannot review Admin approval requests. Export approvals expire after 3
 | --- | --- |
 | `GET /headteacher/teachers` | Query `months?` → `{ department, teachers, summary }` with server academic/content activity counters. |
 | `GET /headteacher/teachers/:id/students` | `{ teacher, students, summary }`; requires a managed teacher in the head teacher's department. |
-| `POST /headteacher/teachers` | Teacher account fields and assignments → `{ user, invite? }`. |
-| `POST /headteacher/students` | Student account fields including `teacherId` and assignments → `{ user, invite? }`. |
+| `POST /headteacher/teachers` | Teacher account fields including required `username` and assignments → `{ user, invite? }`. |
+| `POST /headteacher/students` | Student account fields including required `username`, `teacherId` and assignments → `{ user, invite? }`. |
 | `PUT /headteacher/teachers/:id` | `{ name?, email?, status?, subject?, contactNumber?, advisorySectionId? }` → `{ user }`. |
 | `GET /headteacher/lessons` | `{ lessons }` from managed teachers. |
 | `POST /headteacher/lessons` | Multipart fields including `teacherId, title, description, track/strand` and exactly one PDF `lessonPlanFile` → `{ lesson }`. |
@@ -79,7 +79,7 @@ There is no existing Head Teacher approval route or unrestricted teacher/student
 | `PATCH /teacher/subjects/:id` | `{ className }` → `{ subject }`. |
 | `GET /teacher/students` | Query `subjectId?` → `{ students }`; approved students only, with server progress/recommendation fields. |
 | `GET /teacher/subjects/:id/students` | `{ subject, students }`. |
-| `POST /teacher/students` | Student fields → `{ user, invite }`. |
+| `POST /teacher/students` | Student fields including required `username` → `{ user, invite }`. |
 | `GET /teacher/enrollment-requests` | Query `subjectId?` → `{ requests }`. Each returned `id` is an **enrollment request ID**. |
 | `PATCH /teacher/enrollment-requests/:id/accept` | `{}` → `{ student }`; despite the historical route parameter name `studentId`, pass the returned **request ID**. |
 | `PATCH /teacher/enrollment-requests/:id/reject` | `{}` → `{ student }`; same request ID rule. |

@@ -193,9 +193,11 @@ export const edumatchApi = {
   },
   async createUser(role: Role, input: CreateUserInput): Promise<User> {
     ensureRole(role, ['admin', 'secretary', 'headteacher', 'teacher']);
+    const username = input.username?.trim();
+    if (!username) throw new Error('Username is required.');
     const path = role === 'admin' || role === 'secretary' ? `/${role}/users`
       : role === 'headteacher' && input.role === 'teacher' ? '/headteacher/teachers' : `/${role}/students`;
-    return normalizeUser((await post(path, input)).user);
+    return normalizeUser((await post(path, { ...input, username })).user);
   },
   async updateUser(role: 'admin' | 'secretary' | 'headteacher', userId: string, input: Partial<CreateUserInput>): Promise<User> {
     const path = role === 'headteacher' ? `/headteacher/teachers/${encoded(userId)}` : `/${role}/users/${encoded(userId)}`;

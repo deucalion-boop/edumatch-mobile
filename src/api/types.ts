@@ -296,7 +296,7 @@ export interface PublishAnnouncementInput {
 export interface CreateUserInput {
   name: string;
   email: string;
-  username?: string;
+  username: string;
   role?: Role;
   status?: string;
   department?: string;

@@ -410,7 +410,7 @@ const createTeacherAccount = asyncHandler(async (req, res) => {
     advisorySectionId,
   } = req.body || {};
 
-  if (!name || !email || !username) {
+  if (!name || !email || !String(username || '').trim()) {
     const error = new Error('name, email, and username are required');
     error.statusCode = 400;
     throw error;
@@ -495,7 +495,7 @@ const createStudentAccount = asyncHandler(async (req, res) => {
     contactNumber,
   } = req.body || {};
 
-  if (!teacherId || !name || !email || !username) {
+  if (!teacherId || !name || !email || !String(username || '').trim()) {
     const error = new Error('teacherId, name, email, and username are required');
     error.statusCode = 400;
     throw error;

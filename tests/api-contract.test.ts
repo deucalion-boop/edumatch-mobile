@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { AxiosError, type AxiosResponse, type InternalAxiosRequestConfig } from 'axios';
-import type { Approval } from '../src/api/types';
+import type { Approval, CreateUserInput, Role } from '../src/api/types';
 
 // Keep test transport isolated; the shipped client always calls the configured API.
 process.env.EXPO_PUBLIC_API_URL = 'http://127.0.0.1:5099/api';
@@ -69,6 +69,41 @@ test('unsupported role operations fail before making a request', async () => {
   const approval: Approval = { id: 'request-1', title: 'Export', subtitle: '', kind: 'export', raw: {} };
   await assert.rejects(() => edumatchApi.reviewApproval('secretary', approval, 'approved'), /unavailable for your role/);
   assert.equal(captured.length, 0);
+});
+
+test('account creation requires username before sending requests for every creator role', async () => {
+  const { edumatchApi, captured } = await transport(() => ({ success: true }));
+  for (const role of ['admin', 'secretary', 'headteacher', 'teacher'] as const) {
+    for (const username of [undefined, '', ' \t\n ']) {
+      const input = { name: 'School User', email: 'user@gmail.com', role: 'student', username } as CreateUserInput;
+      await assert.rejects(() => edumatchApi.createUser(role, input), /Username is required/);
+    }
+  }
+  assert.equal(captured.length, 0);
+});
+
+test('every account creation route submits and returns the chosen username', async () => {
+  const { edumatchApi, captured } = await transport(request => ({ success: true,
+    user: { id: 'new-user', ...(request.body as CreateUserInput) } }));
+  const cases: [Role, Role, string][] = [
+    ['admin', 'student', '/admin/users'],
+    ['admin', 'teacher', '/admin/users'],
+    ['admin', 'headteacher', '/admin/users'],
+    ['admin', 'secretary', '/admin/users'],
+    ['secretary', 'student', '/secretary/users'],
+    ['secretary', 'teacher', '/secretary/users'],
+    ['headteacher', 'teacher', '/headteacher/teachers'],
+    ['headteacher', 'student', '/headteacher/students'],
+    ['teacher', 'student', '/teacher/students'],
+  ];
+  for (const [creatorRole, accountRole, path] of cases) {
+    const account = await edumatchApi.createUser(creatorRole, {
+      name: 'School User', email: 'user@gmail.com', username: '  school.user  ', role: accountRole,
+    });
+    assert.equal(captured.at(-1)?.url, path);
+    assert.equal((captured.at(-1)?.body as CreateUserInput).username, 'school.user');
+    assert.equal(account.username, 'school.user');
+  }
 });
 
 test('student subjects show pending enrollment and submit the teacher code through the existing endpoint', async () => {

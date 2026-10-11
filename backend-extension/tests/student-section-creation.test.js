@@ -25,8 +25,9 @@ function createHarness({ sectionReadError, existingHeadTeacher } = {}) {
   const sectionQueries = [];
   const departmentQueries = [];
   const events = [];
+  const emailQueries = [];
   const accounts = {
-    async findSupabaseAccountByEmail() { return null; },
+    async findSupabaseAccountByEmail(email) { emailQueries.push(email); return null; },
     async findSupabaseHeadTeacherByDepartment(department) {
       departmentQueries.push(department);
       return existingHeadTeacher || null;
@@ -97,10 +98,11 @@ function createHarness({ sectionReadError, existingHeadTeacher } = {}) {
     }, res, value => { error = value; });
     return { res, error };
   }
-  return { create, inserts, invites, sectionQueries, departmentQueries, events };
+  return { create, inserts, invites, sectionQueries, departmentQueries, emailQueries, events };
 }
 
 const handlers = ['createUser', 'createAndInviteUser'];
+const managedRoles = userRoles.USER_ROLES.filter(role => role !== 'admin');
 
 test('admin and secretary creation validate and persist an active Section before inserting', async () => {
   for (const handler of handlers) {
@@ -184,6 +186,43 @@ test('required account fields still reject incomplete forms before Section looku
     assert.equal(error.statusCode, 400);
     assert.equal(harness.sectionQueries.length, 0);
     assert.equal(harness.inserts.length, 0);
+  }
+});
+
+test('admin and secretary creation require a nonblank username for every managed account role', async () => {
+  for (const handler of handlers) {
+    for (const actorRole of ['admin', 'secretary']) {
+      for (const role of managedRoles) {
+        for (const username of [undefined, null, '', '  ', '\t\n']) {
+          const harness = createHarness();
+          const { error } = await harness.create(handler, {
+            role, username, department: 'Science', sectionId: 'active-section',
+          }, actorRole);
+          assert.equal(error.statusCode, 400);
+          assert.equal(error.message, 'name, email, username, and role are required');
+          assert.equal(harness.emailQueries.length, 0);
+          assert.equal(harness.departmentQueries.length, 0);
+          assert.equal(harness.sectionQueries.length, 0);
+          assert.equal(harness.inserts.length, 0);
+          assert.equal(harness.invites.length, 0);
+        }
+      }
+    }
+  }
+});
+
+test('admin creation trims and persists the username for every managed account role', async () => {
+  for (const handler of handlers) {
+    for (const role of managedRoles) {
+      const harness = createHarness();
+      const { res, error } = await harness.create(handler, {
+        role, username: '  sample.account  ', department: 'Science', sectionId: 'active-section',
+      });
+      assert.equal(error, undefined);
+      assert.equal(harness.inserts[0].username, 'sample.account');
+      assert.equal(res.body.user.username, 'sample.account');
+      assert.deepEqual(harness.invites, ['new-account']);
+    }
   }
 });
 

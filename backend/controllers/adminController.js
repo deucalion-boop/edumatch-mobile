@@ -904,7 +904,7 @@ const getAuditLogs = asyncHandler(async (req, res) => {
 const createAndInviteUser = asyncHandler(async (req, res) => {
   const { name, email, username, role, contactNumber, department, subject, gradeLevel, sectionId } = req.body || {};
 
-  if (!name || !email || !username || !role) {
+  if (!name || !email || !String(username || '').trim() || !role) {
     const error = new Error('name, email, username, and role are required');
     error.statusCode = 400;
     throw error;
@@ -995,7 +995,7 @@ const createUser = asyncHandler(async (req, res) => {
     sectionId,
   } = req.body;
 
-  if (!name || !email || !username || !role) {
+  if (!name || !email || !String(username || '').trim() || !role) {
     const error = new Error('name, email, username, and role are required');
     error.statusCode = 400;
     throw error;
