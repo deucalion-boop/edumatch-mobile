@@ -16,7 +16,7 @@ const { inviteLimiter, loginLimiter, passwordResetLimiter, uploadLimiter } = req
 const { listSessions, logout, revokeSession } = require('../controllers/securityController');
 const { getMyProfile, updateMyProfile } = require('../controllers/selfProfileController');
 const { uploadProfileImage } = require('../utils/uploadMiddleware');
-const { getLoginSecuritySettings } = require('../controllers/recaptchaSettingsController');
+const { getLoginSecuritySettings } = require('../controllers/captchaSettingsController');
 
 const router = express.Router();
 

@@ -24,6 +24,7 @@ const Recommendation = require('./models/Recommendation');
 const Session = require('./models/Session');
 const OtpChallenge = require('./models/OtpChallenge');
 const authRoutes = require('./routes/authRoutes');
+const captchaRoutes = require('./routes/captchaRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const userRoutes = require('./routes/userRoutes');
 const teacherRoutes = require('./routes/teacherRoutes');
@@ -114,6 +115,7 @@ app.get('/api/health', (_req, res) => {
 });
 
 app.use('/api/auth', authRoutes);
+app.use('/api/captcha', captchaRoutes);
 app.use('/api/storage', storageRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/admin', adminRoutes);

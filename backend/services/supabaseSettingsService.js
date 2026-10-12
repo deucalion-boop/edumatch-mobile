@@ -20,7 +20,10 @@ function hydrateSettings(row) {
     key: 'global',
     user: { emailVerificationRequired: true },
     security: {
-      recaptchaEnabled: value.security?.recaptchaEnabled !== false,
+      // CAPTCHA is mandatory. The legacy field remains a response alias for
+      // clients using the existing login-security endpoint during migration.
+      captchaEnabled: true,
+      recaptchaEnabled: true,
       sessionTimeoutMinutes: boundedInteger(value.security?.sessionTimeoutMinutes, 120, 5, 1440),
       maxLoginAttempts: boundedInteger(value.security?.maxLoginAttempts, 5, 3, 10),
       accountLockoutDurationMinutes: boundedInteger(value.security?.accountLockoutDurationMinutes, 30, 1, 1440),
@@ -62,6 +65,8 @@ async function saveAppSettings(patch, updatedBy) {
       value[section] = { ...(previous?.value?.[section] || {}), ...current[section], ...(patch[section] || {}) };
     }
     value.user.emailVerificationRequired = true;
+    value.security.captchaEnabled = true;
+    delete value.security.recaptchaEnabled;
     const row = {
       key: 'global', value, updated_by: String(updatedBy || '') || null,
       updated_at: new Date(Math.max(Date.now(), Date.parse(previous?.updated_at || '') + 1 || 0)).toISOString(),

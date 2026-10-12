@@ -16,10 +16,14 @@ async function main() {
   const status = await health.json();
   if (status.success !== true) throw new Error('The API did not return a successful EduMatch health response.');
   console.log('Backend is reachable and startup checks passed.');
-  const captcha = await fetch(`${apiUrl}/mobile/captcha`, { signal: AbortSignal.timeout(10000) });
-  if (!captcha.ok) throw new Error(`Mobile CAPTCHA is not ready (HTTP ${captcha.status}). Configure RECAPTCHA_SITE_KEY in the existing backend .env and restart it.`);
-  if (!captcha.headers.get('content-type')?.includes('text/html')) throw new Error('The mobile CAPTCHA endpoint returned an unexpected response.');
-  console.log('Mobile CAPTCHA endpoint is configured. Google domain/key acceptance and email OTP still require a real sign-in.');
+  const captcha = await fetch(`${apiUrl}/captcha/challenge?action=login`, { signal: AbortSignal.timeout(10000) });
+  if (!captcha.ok) throw new Error(`Math CAPTCHA is not ready (HTTP ${captcha.status}). Check the backend Redis configuration and restart it.`);
+  const challenge = await captcha.json();
+  if (challenge.success !== true || typeof challenge.challengeId !== 'string'
+    || !/^\d+ [+\u2212] \d+ = \?$/.test(challenge.question) || 'answer' in challenge) {
+    throw new Error('The math CAPTCHA endpoint returned an unexpected response.');
+  }
+  console.log('Backend math CAPTCHA is available. Email OTP still requires a real sign-in.');
 }
 
 main().catch(error => {

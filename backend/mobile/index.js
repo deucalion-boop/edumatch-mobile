@@ -2,7 +2,6 @@
 
 const path = require('node:path');
 const { createRequire } = require('node:module');
-const { captchaPage } = require('./lib/captcha');
 const { publicUser, identityAuth } = require('./lib/profile');
 const { createDashboardService } = require('./lib/dashboard');
 const { createAttendanceService } = require('./lib/attendance');
@@ -32,7 +31,8 @@ function createMobileRouter(options) {
   const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res)).catch(next);
   const send = (res, result, status = 200) => res.status(status).json({ success: true, ...result });
 
-  router.get('/captcha', captchaPage);
+  // Compatibility URL for old clients; challenges now belong to the auth API.
+  router.get('/captcha', (_req, res) => res.redirect(307, '/api/captcha/challenge?action=login'));
   router.get('/me', identityAuth(authMiddleware), wrap(async (req, res) =>
     send(res, { user: publicUser(req.user, req, resolveStoredFileUrl) })));
   router.use(authMiddleware);

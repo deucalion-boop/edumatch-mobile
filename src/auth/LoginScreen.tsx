@@ -5,13 +5,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { authApi } from '../api/edumatch';
-import type { LoginChallenge } from '../api/types';
+import type { CaptchaAction, LoginChallenge } from '../api/types';
 import { configurationError } from '../config';
 import { errorMessage } from '../api/client';
 import { Captcha } from './Captcha';
 import { useAuth } from './AuthProvider';
 import { LoginBranding, loginColors, loginFonts, loginGradient, LoginHero } from './LoginVisuals';
-import { requireRecaptchaForAttempt } from './loginSecurity';
+import { requireCaptchaForAttempt } from './loginSecurity';
 
 type PendingSignIn = {
   attempt: number;
@@ -47,6 +47,7 @@ export function LoginScreen() {
   const [email, setEmail] = useState('');
   const [captcha, setCaptcha] = useState(false);
   const [captchaAttempt, setCaptchaAttempt] = useState(0);
+  const [captchaAction, setCaptchaAction] = useState<CaptchaAction>('login');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -55,6 +56,7 @@ export function LoginScreen() {
   const captchaOpen = useRef(false);
   const currentAttempt = useRef(0);
   const pendingSignIn = useRef<PendingSignIn | null>(null);
+  const pendingRecovery = useRef<{ attempt: number; email: string } | null>(null);
   const mounted = useRef(true);
   const usernameInput = useRef<TextInput>(null);
   const passwordInput = useRef<TextInput>(null);
@@ -67,7 +69,7 @@ export function LoginScreen() {
     mounted.current = true;
     return () => {
       mounted.current = false; currentAttempt.current += 1;
-      pendingSignIn.current = null; captchaOpen.current = false;
+      pendingSignIn.current = null; pendingRecovery.current = null; captchaOpen.current = false;
     };
   }, []);
   useEffect(() => {
@@ -85,14 +87,14 @@ export function LoginScreen() {
   }, [challenge]);
 
   const closeCaptcha = () => {
-    captchaOpen.current = false; pendingSignIn.current = null;
+    captchaOpen.current = false; pendingSignIn.current = null; pendingRecovery.current = null;
     currentAttempt.current += 1;
     if (mounted.current) setCaptcha(false);
   };
   const completeSignIn = async (captchaToken: string, attempt: number) => {
     const pending = pendingSignIn.current;
     if (!mounted.current || !pending || pending.attempt !== attempt || attempt !== currentAttempt.current || !requestInFlight.current) return;
-    // Consume this submission before making a request, so repeated widget messages
+    // Consume this submission before making a request, so repeated callbacks
     // cannot sign in twice or reuse a completed attempt.
     pendingSignIn.current = null; captchaOpen.current = false;
     setCaptcha(false); setLoading(true); setError(null);
@@ -120,13 +122,13 @@ export function LoginScreen() {
     const attempt = ++currentAttempt.current;
     pendingSignIn.current = { attempt, username: username.trim(), password, challengeToken: challenge?.challengeToken, otpCode: code, remember };
     requestInFlight.current = true; setLoading(true);
-    // Only the initial login checks the school reCAPTCHA policy. An OTP
-    // challenge continues directly to verification using the entered code.
-    const requiresCaptcha = await requireRecaptchaForAttempt(() => authApi.loginSecuritySettings(), challenge ? 'verify-code' : 'login');
+    // Every initial login requires math CAPTCHA. The emailed OTP continues
+    // directly after that initial check.
+    const requiresCaptcha = requireCaptchaForAttempt(challenge ? 'verify-code' : 'login');
     if (!mounted.current || attempt !== currentAttempt.current) return;
     if (requiresCaptcha) {
       requestInFlight.current = false; setLoading(false);
-      setCaptchaAttempt(attempt); captchaOpen.current = true; setCaptcha(true);
+      setCaptchaAction('login'); setCaptchaAttempt(attempt); captchaOpen.current = true; setCaptcha(true);
     } else {
       await completeSignIn('', attempt);
     }
@@ -134,7 +136,18 @@ export function LoginScreen() {
   const submit = async (captchaToken: string, attempt: number) => {
     if (!mounted.current || !captchaOpen.current || attempt !== currentAttempt.current || requestInFlight.current) return;
     requestInFlight.current = true;
-    await completeSignIn(captchaToken, attempt);
+    const recovery = pendingRecovery.current;
+    if (recovery?.attempt === attempt) {
+      pendingRecovery.current = null; captchaOpen.current = false;
+      setCaptcha(false); setLoading(true); setError(null);
+      try {
+        await authApi.forgotPassword(recovery.email, captchaToken);
+        if (mounted.current && attempt === currentAttempt.current) setNotice('If an EduMatch account uses this email, password reset instructions have been sent. Check your inbox.');
+      } catch (caught) { if (mounted.current && attempt === currentAttempt.current) setError(errorMessage(caught)); }
+      finally { if (mounted.current && attempt === currentAttempt.current) { requestInFlight.current = false; setLoading(false); } }
+    } else {
+      await completeSignIn(captchaToken, attempt);
+    }
   };
   const resend = async () => {
     if (!challenge || requestInFlight.current || captchaOpen.current || (resendSeconds !== null && resendSeconds > 0)) return;
@@ -144,13 +157,13 @@ export function LoginScreen() {
     finally { requestInFlight.current = false; setLoading(false); }
   };
   const recoverPassword = async () => {
-    if (requestInFlight.current || configurationError) return;
+    if (requestInFlight.current || captchaOpen.current || configurationError) return;
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) { setError('Enter a valid email address to receive your reset link.'); return; }
     Keyboard.dismiss();
-    requestInFlight.current = true; setLoading(true); setError(null); setNotice(null);
-    try { await authApi.forgotPassword(email.trim()); setNotice('If an EduMatch account uses this email, password reset instructions have been sent. Check your inbox.'); }
-    catch (caught) { setError(errorMessage(caught)); }
-    finally { requestInFlight.current = false; setLoading(false); }
+    setError(null); setNotice(null);
+    const attempt = ++currentAttempt.current;
+    pendingRecovery.current = { attempt, email: email.trim() };
+    setCaptchaAction('forgot-password'); setCaptchaAttempt(attempt); captchaOpen.current = true; setCaptcha(true);
   };
   const backToSignIn = () => { if (requestInFlight.current) return; closeCaptcha(); setRecovering(false); if (recover) router.setParams({ recover: undefined }); setChallenge(null); setCode(''); setPassword(''); setShowPassword(false); setError(null); setNotice(null); };
 
@@ -208,7 +221,7 @@ export function LoginScreen() {
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
-    {captcha && <Captcha key={captchaAttempt} visible onToken={token => void submit(token, captchaAttempt)} onClose={() => { if (captchaOpen.current && captchaAttempt === currentAttempt.current) closeCaptcha(); }} />}
+    {captcha && <Captcha key={captchaAttempt} visible action={captchaAction} onToken={token => void submit(token, captchaAttempt)} onClose={() => { if (captchaOpen.current && captchaAttempt === currentAttempt.current) closeCaptcha(); }} />}
   </SafeAreaView>;
 }
 

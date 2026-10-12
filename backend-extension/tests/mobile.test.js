@@ -8,7 +8,6 @@ const { createDeviceService } = require('../lib/devices');
 const { createPushWorker, nextAttempt } = require('../lib/push-worker');
 const { identityAuth, publicUser } = require('../lib/profile');
 const { createDashboardService } = require('../lib/dashboard');
-const { allowedFrameOrigins, captchaPage } = require('../lib/captcha');
 
 function fakeClient(tables = {}, rpcHandlers = {}) {
   const calls = [];
@@ -39,29 +38,6 @@ const teacher = { _id: 'teacher1', role: 'teacher', tokenVersion: 0 };
 const student = { _id: 'student1', role: 'student' };
 const token = crypto.randomBytes(32).toString('base64url');
 const qrPayload = `edumatch://attendance/session1?token=${token}`;
-
-test('CAPTCHA frame allowlist trusts configured HTTPS origins and development HTTP only', () => {
-  assert.deepEqual(allowedFrameOrigins({ NODE_ENV:'production', CORS_ALLOWED_ORIGINS:'https://school.example,https://school.example/,http://unsafe.example,javascript:alert(1),https://user:pass@other.example,*' }), ['https://school.example']);
-  assert.deepEqual(allowedFrameOrigins({ NODE_ENV:'development', FRONTEND_URL:'http://localhost:8081' }), ['http://localhost:8081']);
-});
-
-test('CAPTCHA endpoint never publishes a backend secret mistaken for the public site key', () => {
-  const previousSiteKey = process.env.RECAPTCHA_SITE_KEY;
-  const previousSecret = process.env.RECAPTCHA_SECRET_KEY;
-  try {
-    const secret = 'private-test-secret-1234567890';
-    process.env.RECAPTCHA_SITE_KEY = secret;
-    process.env.RECAPTCHA_SECRET_KEY = secret;
-    const response = { statusCode: 200, body: null, status(code) { this.statusCode = code; return this; }, json(body) { this.body = body; return this; } };
-    captchaPage({}, response);
-    assert.equal(response.statusCode, 503);
-    assert.equal(response.body.success, false);
-    assert.equal(JSON.stringify(response.body).includes(secret), false);
-  } finally {
-    if (previousSiteKey === undefined) delete process.env.RECAPTCHA_SITE_KEY; else process.env.RECAPTCHA_SITE_KEY = previousSiteKey;
-    if (previousSecret === undefined) delete process.env.RECAPTCHA_SECRET_KEY; else process.env.RECAPTCHA_SECRET_KEY = previousSecret;
-  }
-});
 
 test('QR parser rejects other URLs, malformed secrets, and forged paths', () => {
   const parsed = parseQr(qrPayload);

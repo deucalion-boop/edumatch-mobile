@@ -4,10 +4,10 @@ import type {
   ActivityResponseInput, AdminOtpSettings, AiCreatorRole, AiUsageAnalytics, AiUsageDays, Approval, Assessment, AssessmentWeights, Attachment,
   AttendanceFilters, AttendanceOverview, AttendanceRecord, AttendanceRoster,
   AttendanceScanResult, AttendanceSession, AttendanceSessionDetail, AttendanceSessionQr,
-  AttendanceStatus, AuthSession, CreateAttendanceSessionInput, CreateUserInput,
+  AttendanceStatus, AuthSession, CaptchaAction, CaptchaChallenge, CaptchaSettings, CaptchaVerification, CreateAttendanceSessionInput, CreateUserInput,
   Dashboard, DataRow, Lesson, ListFilters, LoginChallenge, LoginInput, LoginResult, LoginSecuritySettings,
   Notification, Paginated, PublishAnnouncementInput, ResourceItem, ReviewGradeInput,
-  RecaptchaSettings, Role, SaveAttendanceInput, Section, Subject, User, VerifyOtpInput,
+  Role, SaveAttendanceInput, Section, Subject, User, VerifyOtpInput,
 } from './types';
 
 const roles = new Set<Role>(['admin', 'secretary', 'headteacher', 'teacher', 'student']);
@@ -52,10 +52,10 @@ function normalizeOtpSettings(value: unknown): AdminOtpSettings {
   if (typeof settings.enabled !== 'boolean' || settings.scope !== 'account') throw new Error('The server returned invalid OTP settings.');
   return { enabled: settings.enabled, scope: 'account' };
 }
-function normalizeRecaptchaSettings(value: unknown): RecaptchaSettings {
+function normalizeCaptchaSettings(value: unknown): CaptchaSettings {
   const settings = object(value);
-  if (typeof settings.enabled !== 'boolean' || settings.scope !== 'school') throw new Error('The server returned invalid reCAPTCHA settings.');
-  return { enabled: settings.enabled, scope: 'school' };
+  if (settings.enabled !== true || settings.scope !== 'school') throw new Error('The server returned invalid math CAPTCHA settings.');
+  return { enabled: true, scope: 'school' };
 }
 function otpUpdateBody(input: { enabled: boolean; currentPassword: string }) {
   if (typeof input.enabled !== 'boolean' || typeof input.currentPassword !== 'string' || !input.currentPassword) {
@@ -218,8 +218,8 @@ export const authApi = {
   async loginSecuritySettings(): Promise<LoginSecuritySettings> {
     const data = await get('/auth/login-security');
     const settings = object(data.settings);
-    if (typeof settings.recaptchaEnabled !== 'boolean') throw new Error('The server returned invalid sign-in security settings.');
-    return { recaptchaEnabled: settings.recaptchaEnabled };
+    if (settings.captchaEnabled !== true) throw new Error('The server returned invalid sign-in security settings.');
+    return { captchaEnabled: true };
   },
   async login(input: LoginInput): Promise<LoginResult> {
     return normalizeLogin((await api.post('/auth/login', input)).data);
@@ -246,7 +246,33 @@ export const authApi = {
   },
   async sessions(): Promise<DataRow[]> { return rows(await get('/auth/sessions'), 'sessions'); },
   async revokeSession(sessionId: string): Promise<void> { await api.delete(`/auth/sessions/${encoded(sessionId)}`); },
-  async forgotPassword(email: string): Promise<void> { await post('/auth/forgot-password', { email }); },
+  async forgotPassword(email: string, captchaToken: string): Promise<void> { await post('/auth/forgot-password', { email, captchaToken }); },
+};
+
+function captchaExpiry(value: unknown): string {
+  const expiry = string(value);
+  if (!expiry || !Number.isFinite(Date.parse(expiry)) || Date.parse(expiry) <= Date.now()) {
+    throw new Error('The security check expired. Refresh the question and try again.');
+  }
+  return expiry;
+}
+
+export const captchaApi = {
+  async challenge(action: CaptchaAction = 'login', signal?: AbortSignal): Promise<CaptchaChallenge> {
+    const data = envelope((await api.get('/captcha/challenge', { params: { action }, signal })).data);
+    if (data.success !== true || !string(data.challengeId) || string(data.challengeId).length > 256
+      || !/^\d{1,3}\s*[+\u2212-]\s*\d{1,3}\s*=\s*\?$/.test(string(data.question))) {
+      throw new Error('The server returned an invalid math security question. Please try again.');
+    }
+    return { challengeId: string(data.challengeId), question: string(data.question), expiresAt: captchaExpiry(data.expiresAt) };
+  },
+  async verify(challengeId: string, answer: string, action: CaptchaAction = 'login', signal?: AbortSignal): Promise<CaptchaVerification> {
+    const data = envelope((await api.post('/captcha/verify', { challengeId, answer, action }, { signal })).data);
+    if (data.success !== true || !string(data.verificationToken) || string(data.verificationToken).length > 256) {
+      throw new Error('The server did not verify the security check. Please try again.');
+    }
+    return { verificationToken: string(data.verificationToken), expiresAt: captchaExpiry(data.expiresAt) };
+  },
 };
 
 export const notificationApi = {
@@ -275,14 +301,8 @@ export const edumatchApi = {
   async updateAdminOtpSettings(input: { enabled: boolean; currentPassword: string }): Promise<AdminOtpSettings> {
     return normalizeOtpSettings((await put('/admin/settings/otp', otpUpdateBody(input))).settings);
   },
-  async recaptchaSettings(): Promise<RecaptchaSettings> {
-    return normalizeRecaptchaSettings((await get('/admin/settings/recaptcha')).settings);
-  },
-  async updateRecaptchaSettings(input: { enabled: boolean; currentPassword: string }): Promise<RecaptchaSettings> {
-    if (typeof input.enabled !== 'boolean' || typeof input.currentPassword !== 'string' || !input.currentPassword) {
-      throw new Error('Choose a reCAPTCHA setting and enter your current password.');
-    }
-    return normalizeRecaptchaSettings((await put('/admin/settings/recaptcha', { enabled: input.enabled, currentPassword: input.currentPassword })).settings);
+  async captchaSettings(): Promise<CaptchaSettings> {
+    return normalizeCaptchaSettings((await get('/admin/settings/captcha')).settings);
   },
   async users(role: Role, filters?: ListFilters): Promise<User[]> {
     let data: DataRow;

@@ -18,7 +18,8 @@ const CATEGORY_LABELS = {
 const ACTION_LABELS = {
   'PUT /api/admin/profile': 'Admin profile updated',
   'PUT /api/admin/settings/otp': 'Admin login OTP setting updated',
-  'PUT /api/admin/settings/recaptcha': 'School reCAPTCHA setting updated',
+  'PUT /api/admin/settings/captcha': 'School math CAPTCHA policy confirmed',
+  'PUT /api/admin/settings/recaptcha': 'School math CAPTCHA policy confirmed',
   'PUT /api/auth/profile': 'Account profile updated',
   'POST /api/auth/login': 'User login',
   'POST /api/auth/change-password': 'Password changed',

@@ -1,6 +1,6 @@
 # EduMatch mobile API contract
 
-The mobile project consumes the existing Express APIs in the sibling `Edumatch/backend` project. `EXPO_PUBLIC_API_URL` includes the `/api` prefix. Axios supplies `Authorization: Bearer <JWT>` after login. The new endpoints are packaged in `backend-extension`; install that extension and its migration into the existing backend before using mobile login rehydration, QR attendance, or push registration.
+The mobile project consumes the Express APIs deployed from this repository's `backend/` directory. `EXPO_PUBLIC_API_URL` includes the `/api` prefix. Axios supplies `Authorization: Bearer <JWT>` after login. `backend-extension` packages the additive mobile endpoints and attendance/push migrations. The math CAPTCHA authentication changes require the complete updated backend; the extension installer alone does not supply them. The sibling `Edumatch` website was not edited during this migration.
 
 Responses use `{ success: true, message, ...fields }`. Failures use HTTP 4xx/5xx with `{ success: false, message, details? }`. Array fields are named per endpoint, rather than nested under `data`. The client validates array responses and normalizes `id`/`_id` without changing server decisions. `ResourceItem.raw` retains the returned record for detail and mutation screens, excluding password hashes, invitation/reset metadata and token fields found in some legacy user management responses. Authentication tokens are stored separately through SecureStore.
 
@@ -10,8 +10,10 @@ Roles are `admin`, `secretary`, `headteacher`, `teacher`, and `student`. The Pri
 
 | Method and route | Request | Response fields / behavior |
 | --- | --- | --- |
-| `POST /auth/login` | `{ username, password, captchaToken, remember? }` | `202 { requiresOtp: true, challengeToken, deliveryHint, expiresAt, resendAvailableAt }`; password alone does not create a session. |
-| `POST /auth/login/verify-otp` | `{ challengeToken, otpCode, captchaToken }` | `{ token, user, redirectPath? }`; OTP and a fresh CAPTCHA are checked by the backend. |
+| `GET /captcha/challenge?action=login` | Action is `login` or `forgot-password`; defaults to `login`. | `{ challengeId, question, expiresAt }`; only addition/subtraction, no answer. Expires after five minutes. |
+| `POST /captcha/verify` | `{ challengeId, answer, action }` | `{ verificationToken, expiresAt }`; every attempted answer consumes the challenge. Correct answers authorize one protected request within at most 60 seconds. |
+| `POST /auth/login` | `{ username, password, captchaToken, remember? }` | Atomically consumes a token verified for `login`. `202 { requiresOtp: true, challengeToken, deliveryHint, expiresAt, resendAvailableAt }` when OTP is required; an admin with personal OTP off receives `{token,user}` directly. |
+| `POST /auth/login/verify-otp` | `{ challengeToken, otpCode }` | `{ token, user, redirectPath? }`; the server validates the emailed OTP and existing challenge without a second CAPTCHA. |
 | `POST /auth/login/resend-otp` | `{ challengeToken }` | New challenge and timing fields; server enforces cooldown and attempt limits. |
 | `GET /mobile/me` | Bearer token | `{ user }`; resolves current role and account status for SecureStore rehydration. |
 | `POST /auth/change-password` | `{ currentPassword, newPassword, confirmNewPassword }` | Password update and session invalidation; sign in again afterward. |
@@ -19,9 +21,15 @@ Roles are `admin`, `secretary`, `headteacher`, `teacher`, and `student`. The Pri
 | `POST /auth/presence` | `{}` | `{ lastActivityAt }`; this heartbeat does not extend an idle session. |
 | `GET /auth/sessions` | — | `{ sessions: [{ id, current, ipAddress, userAgent, remember, createdAt, lastSeenAt, expiresAt }] }`. |
 | `DELETE /auth/sessions/:id` | — | Revokes a session belonging to the authenticated account. |
-| `POST /auth/forgot-password` | `{ email }` | Generic reset-email result. |
+| `POST /auth/forgot-password` | `{ email, captchaToken }` | Atomically consumes a token verified for `forgot-password`, then returns a generic reset-email result. |
+| `GET /auth/login-security` | Public | `{settings:{captchaEnabled:true,recaptchaEnabled:true}}`; the legacy field is a compatibility alias. Protection cannot be disabled. |
+| `GET /admin/settings/captcha` | Active admin session | `{settings:{enabled:true,captchaEnabled:true,required:true,scope:'school'}}`. Admin UI displays the required policy. |
+| `PUT /admin/settings/captcha` | Active admin, `{enabled:true,currentPassword}` | Confirms required policy after checking the current password. `enabled:false` is rejected. Legacy `/admin/settings/recaptcha` routes are equivalent aliases. |
+| `GET /mobile/captcha` | Public | HTTP 307 redirect to `/api/captcha/challenge?action=login`; JSON replaces the former widget page. |
 
-The server requires Google reCAPTCHA for both login stages and emails a six-digit OTP. Its public mobile CAPTCHA page exposes only the site key; the secret remains on the backend. `forcePasswordChange` routes the app to the password screen. Maintenance, suspended accounts, role restrictions, and inactivity errors are shown from the API. No alternate mobile password/CAPTCHA bypass is introduced.
+Math CAPTCHA is generated and checked only on the backend. The client displays the question and sends the entered answer; it does not calculate or store the expected answer. Challenge IDs and verification tokens are opaque random values. Both are consumed atomically once, and tokens are bound to the protected action. Client success flags, raw challenge IDs, incorrect/expired/reused tokens, and a token for the wrong action cannot authorize login or password recovery. Challenge issuance is limited to 30 requests and verification to 15 attempts per IP per five minutes, alongside existing auth rate limits. Responses are not cached. Production uses shared Redis; storage outages fail closed. See [migration details and test examples](MATH-CAPTCHA-MIGRATION.md).
+
+The server retains six-digit emailed OTP, administrator-specific OTP preferences, account lockouts, maintenance restrictions, and session checks. `forcePasswordChange` routes the app to the password screen. Existing account creation stays behind authenticated role endpoints, and invitation completion/reset completion keep their existing secure email-token workflows.
 
 The existing browser invitation and password reset routes remain compatible: `GET /auth/invite/:token`, `POST /auth/invite/:token/complete {password}`, `GET /auth/reset/:token`, and `POST /auth/reset/:token/complete {password}`.
 

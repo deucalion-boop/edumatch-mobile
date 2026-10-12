@@ -1,11 +1,5 @@
-/** A missing or invalid policy never removes the sign-in security check. */
-export async function requireRecaptchaForAttempt(loadPolicy: () => Promise<unknown>, step: 'login' | 'verify-code' = 'login'): Promise<boolean> {
-  if (step === 'verify-code') return false;
-  try {
-    const policy = await loadPolicy();
-    return !policy || typeof policy !== 'object' || Array.isArray(policy)
-      || (policy as { recaptchaEnabled?: unknown }).recaptchaEnabled !== false;
-  } catch {
-    return true;
-  }
+/** The initial login always requires a server-verified math challenge. */
+export function requireCaptchaForAttempt(step: 'login' | 'verify-code' = 'login'): boolean {
+  // An emailed OTP continues the initial, already CAPTCHA-verified login.
+  return step === 'login';
 }

@@ -10,35 +10,38 @@ function assertActiveAdmin(user) {
   }
 }
 
-function recaptchaEnabled(settings) {
-  return settings.security?.recaptchaEnabled !== false;
+function captchaSettings() {
+  return { enabled: true, captchaEnabled: true, required: true, scope: 'school' };
 }
 
 const getLoginSecuritySettings = asyncHandler(async (_req, res) => {
   res.set('Cache-Control', 'no-store');
-  const settings = await getAppSettings();
+  await getAppSettings();
   return sendSuccess(res, 200, 'Sign-in security settings fetched successfully', {
-    settings: { recaptchaEnabled: recaptchaEnabled(settings) },
+    settings: { captchaEnabled: true, recaptchaEnabled: true },
   });
 });
 
-const getRecaptchaSettings = asyncHandler(async (req, res) => {
+const getCaptchaSettings = asyncHandler(async (req, res) => {
   assertActiveAdmin(req.user);
   res.set('Cache-Control', 'no-store');
-  const settings = await getAppSettings();
-  return sendSuccess(res, 200, 'School reCAPTCHA settings fetched successfully', {
-    settings: { enabled: recaptchaEnabled(settings), scope: 'school' },
+  await getAppSettings();
+  return sendSuccess(res, 200, 'School math CAPTCHA settings fetched successfully', {
+    settings: captchaSettings(),
   });
 });
 
-const saveRecaptchaSettings = asyncHandler(async (req, res) => {
+const saveCaptchaSettings = asyncHandler(async (req, res) => {
   assertActiveAdmin(req.user);
   const { enabled, currentPassword } = req.body || {};
   if (typeof enabled !== 'boolean') {
-    throw Object.assign(new Error('reCAPTCHA setting must be on or off'), { statusCode: 400 });
+    throw Object.assign(new Error('CAPTCHA setting must be a boolean'), { statusCode: 400 });
+  }
+  if (!enabled) {
+    throw Object.assign(new Error('Math CAPTCHA is required and cannot be disabled'), { statusCode: 400 });
   }
   if (typeof currentPassword !== 'string' || currentPassword.length === 0) {
-    throw Object.assign(new Error('Current password is required to change reCAPTCHA settings'), { statusCode: 400 });
+    throw Object.assign(new Error('Current password is required to confirm CAPTCHA settings'), { statusCode: 400 });
   }
   const account = await findSupabaseAccount('id', req.user._id);
   assertActiveAdmin(account);
@@ -48,17 +51,16 @@ const saveRecaptchaSettings = asyncHandler(async (req, res) => {
   if (!await account.comparePassword(currentPassword)) {
     throw Object.assign(new Error('Current password is incorrect'), { statusCode: 400 });
   }
-  const settings = await saveAppSettings({ security: { recaptchaEnabled: enabled } }, account._id);
-  const saved = recaptchaEnabled(settings);
+  await saveAppSettings({ security: { captchaEnabled: true } }, account._id);
   req.auditLogContext = {
     ...req.auditLogContext,
-    actionLabel: saved ? 'School sign-in reCAPTCHA enabled' : 'School sign-in reCAPTCHA disabled',
+    actionLabel: 'Required school math CAPTCHA policy confirmed',
     targetId: 'global',
     targetLabel: 'School sign-in security',
   };
-  return sendSuccess(res, 200, 'School reCAPTCHA settings saved successfully', {
-    settings: { enabled: saved, scope: 'school' },
+  return sendSuccess(res, 200, 'Required school math CAPTCHA settings confirmed', {
+    settings: captchaSettings(),
   });
 });
 
-module.exports = { getLoginSecuritySettings, getRecaptchaSettings, saveRecaptchaSettings };
+module.exports = { getLoginSecuritySettings, getCaptchaSettings, saveCaptchaSettings };

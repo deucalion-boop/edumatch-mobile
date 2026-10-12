@@ -28,7 +28,7 @@ const { getSectionDirectory } = require('../controllers/sectionController');
 const { accountSecurityLimiter, inviteLimiter, uploadLimiter } = require('../middlewares/rateLimiters');
 const { getAdminProfile, updateAdminProfile } = require('../controllers/adminProfileController');
 const { getAdminOtpSettings, saveAdminOtpSettings } = require('../controllers/adminSecurityController');
-const { getRecaptchaSettings, saveRecaptchaSettings } = require('../controllers/recaptchaSettingsController');
+const { getCaptchaSettings, saveCaptchaSettings } = require('../controllers/captchaSettingsController');
 const {
   getStudentAccountRequests,
   reviewStudentAccountRequest,
@@ -42,8 +42,11 @@ router.get('/profile', getAdminProfile);
 router.put('/profile', uploadLimiter, uploadProfileImage.single('profileImage'), updateAdminProfile);
 router.get('/settings/otp', getAdminOtpSettings);
 router.put('/settings/otp', accountSecurityLimiter, saveAdminOtpSettings);
-router.get('/settings/recaptcha', getRecaptchaSettings);
-router.put('/settings/recaptcha', accountSecurityLimiter, saveRecaptchaSettings);
+router.get('/settings/captcha', getCaptchaSettings);
+router.put('/settings/captcha', accountSecurityLimiter, saveCaptchaSettings);
+// Preserve existing endpoint URLs for clients upgrading to math CAPTCHA.
+router.get('/settings/recaptcha', getCaptchaSettings);
+router.put('/settings/recaptcha', accountSecurityLimiter, saveCaptchaSettings);
 
 router.route('/users').post(createUser).get(getUsers);
 router.route('/users/:id').get(getUserById).put(uploadLimiter, uploadProfileImage.single('profileImage'), updateUser).delete(deleteUser);

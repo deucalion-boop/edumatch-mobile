@@ -223,6 +223,10 @@ function loginFixture(preferenceService) {
     bcryptjs: { hash: async () => 'otp-hash', compare: async (value) => value === '123456' },
     '../services/gmailService': { async sendEmailViaGmail(payload) { events.push(['email', plain(payload)]); return { sent: true }; } },
     '../services/supabaseSettingsService': { getAppSettings: async () => settings },
+    '../services/mathCaptchaService': { async consumeVerificationToken(token, action) {
+      assert.equal(action, 'login');
+      return Boolean(token) && state.captchaValid;
+    } },
     '../services/adminSecurityService': { async getAdminLoginOtpEnabled(id) { events.push(['preference', id]); if (state.error) throw state.error; return preferenceService ? preferenceService.getAdminLoginOtpEnabled(id) : state.enabled; } },
     '../services/supabaseAccountService': {
       findSupabaseAccountByUsername: async () => user,
@@ -240,9 +244,7 @@ function loginFixture(preferenceService) {
     },
     '../utils/fileStorage': { resolveStoredFileUrl: (_req, value) => value },
   }, {
-    process: { env: { RECAPTCHA_SECRET_KEY: 'test-key', RECAPTCHA_ALLOWED_HOSTNAMES: 'localhost', JWT_SECRET: 'test-secret' } },
-    URLSearchParams, AbortController, setTimeout, clearTimeout,
-    fetch: async () => ({ ok: true, json: async () => ({ success: state.captchaValid, hostname: 'localhost' }) }),
+    process: { env: { JWT_SECRET: 'test-secret' } },
   });
   const request = (overrides = {}) => ({
     body: { username: 'admin', password: 'correct-password', captchaToken: 'verified', ...overrides },

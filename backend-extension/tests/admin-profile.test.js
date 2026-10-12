@@ -380,7 +380,7 @@ test('admin self-profile and OTP routes share admin authentication and use their
   const imageParser = () => {};
   const profile = { getAdminProfile() {}, updateAdminProfile() {} };
   const security = { getAdminOtpSettings() {}, saveAdminOtpSettings() {} };
-  const recaptcha = { getRecaptchaSettings() {}, saveRecaptchaSettings() {} };
+  const captcha = { getCaptchaSettings() {}, saveCaptchaSettings() {} };
   const router = {
     use(...middleware) { routes.push(['use', ...middleware]); },
     route() { return { post() { return this; }, get() { return this; }, put() { return this; }, delete() { return this; } }; },
@@ -394,7 +394,7 @@ test('admin self-profile and OTP routes share admin authentication and use their
     if (name === '../middlewares/roleMiddleware') return role => { assert.equal(role, 'admin'); return adminOnly; };
     if (name === '../controllers/adminProfileController') return profile;
     if (name === '../controllers/adminSecurityController') return security;
-    if (name === '../controllers/recaptchaSettingsController') return recaptcha;
+    if (name === '../controllers/captchaSettingsController') return captcha;
     if (name === '../middlewares/rateLimiters') return { uploadLimiter, accountSecurityLimiter };
     if (name === '../utils/uploadMiddleware') return {
       uploadProfileImage: { single(field) { parsedImageFields.push(field); return imageParser; } },
@@ -409,8 +409,10 @@ test('admin self-profile and OTP routes share admin authentication and use their
   assert.deepEqual(routes.find(route => route[0] === 'get' && route[1] === '/settings/otp'), ['get', '/settings/otp', security.getAdminOtpSettings]);
   assert.deepEqual(routes.find(route => route[0] === 'put' && route[1] === '/settings/otp'), ['put', '/settings/otp', accountSecurityLimiter, security.saveAdminOtpSettings]);
   assert.notEqual(profile.updateAdminProfile, security.saveAdminOtpSettings);
-  assert.deepEqual(routes.find(route => route[0] === 'get' && route[1] === '/settings/recaptcha'), ['get', '/settings/recaptcha', recaptcha.getRecaptchaSettings]);
-  assert.deepEqual(routes.find(route => route[0] === 'put' && route[1] === '/settings/recaptcha'), ['put', '/settings/recaptcha', accountSecurityLimiter, recaptcha.saveRecaptchaSettings]);
+  for (const path of ['/settings/captcha', '/settings/recaptcha']) {
+    assert.deepEqual(routes.find(route => route[0] === 'get' && route[1] === path), ['get', path, captcha.getCaptchaSettings]);
+    assert.deepEqual(routes.find(route => route[0] === 'put' && route[1] === path), ['put', path, accountSecurityLimiter, captcha.saveCaptchaSettings]);
+  }
 });
 
 test('shared self-profile routes authenticate every role and use the existing safe image parser', () => {
@@ -420,7 +422,7 @@ test('shared self-profile routes authenticate every role and use the existing sa
   const uploadLimiter = () => {};
   const imageParser = () => {};
   const profile = { getMyProfile() {}, updateMyProfile() {} };
-  const recaptcha = { getLoginSecuritySettings() {} };
+  const captcha = { getLoginSecuritySettings() {} };
   const router = {
     get(path, ...handlers) { routes.push(['get', path, ...handlers]); },
     put(path, ...handlers) { routes.push(['put', path, ...handlers]); },
@@ -430,7 +432,7 @@ test('shared self-profile routes authenticate every role and use the existing sa
     if (name === 'express') return { Router: () => router };
     if (name === '../middlewares/authMiddleware') return auth;
     if (name === '../controllers/selfProfileController') return profile;
-    if (name === '../controllers/recaptchaSettingsController') return recaptcha;
+    if (name === '../controllers/captchaSettingsController') return captcha;
     if (name === '../middlewares/rateLimiters') return { uploadLimiter };
     if (name === '../utils/uploadMiddleware') return {
       uploadProfileImage: { single(field) { parsedImageFields.push(field); return imageParser; } },
@@ -440,5 +442,5 @@ test('shared self-profile routes authenticate every role and use the existing sa
   assert.deepEqual(routes.find(route => route[0] === 'get' && route[1] === '/profile'), ['get', '/profile', auth, profile.getMyProfile]);
   assert.deepEqual(routes.find(route => route[0] === 'put' && route[1] === '/profile'), ['put', '/profile', auth, uploadLimiter, imageParser, profile.updateMyProfile]);
   assert.deepEqual(parsedImageFields, ['profileImage']);
-  assert.deepEqual(routes.find(route => route[0] === 'get' && route[1] === '/login-security'), ['get', '/login-security', recaptcha.getLoginSecuritySettings]);
+  assert.deepEqual(routes.find(route => route[0] === 'get' && route[1] === '/login-security'), ['get', '/login-security', captcha.getLoginSecuritySettings]);
 });

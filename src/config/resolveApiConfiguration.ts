@@ -5,7 +5,7 @@ type ApiConfigurationOptions = {
   browserHostname?: string;
 };
 
-// Local browser previews can use a CAPTCHA-approved hostname while phones use the LAN API.
+// Local browser previews can use a loopback API while phones use the LAN API.
 export function resolveApiConfiguration(options: ApiConfigurationOptions) {
   const localBrowser = ['localhost', '127.0.0.1', '[::1]'].includes(options.browserHostname || '');
   const webOverride = options.isDevelopment && localBrowser ? options.webApiUrl?.trim() : undefined;

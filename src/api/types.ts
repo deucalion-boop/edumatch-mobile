@@ -2,8 +2,11 @@
 export type Role = 'admin' | 'secretary' | 'headteacher' | 'teacher' | 'student';
 export type DataRow = Record<string, unknown>;
 export interface AdminOtpSettings { enabled: boolean; scope: 'account' }
-export interface RecaptchaSettings { enabled: boolean; scope: 'school' }
-export interface LoginSecuritySettings { recaptchaEnabled: boolean }
+export interface CaptchaSettings { enabled: true; scope: 'school' }
+export interface LoginSecuritySettings { captchaEnabled: true }
+export type CaptchaAction = 'login' | 'forgot-password';
+export interface CaptchaChallenge { challengeId: string; question: string; expiresAt: string }
+export interface CaptchaVerification { verificationToken: string; expiresAt: string }
 export type AttendanceStatus = 'Present' | 'Late' | 'Absent' | 'Excused';
 export type AttendanceScope = 'handled_class' | 'advisory_class';
 

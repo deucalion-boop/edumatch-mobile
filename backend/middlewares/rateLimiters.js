@@ -105,6 +105,15 @@ const loginLimiter = buildLimiter({
   message: 'Too many sign-in attempts. Please try again later.',
 });
 
+const captchaChallengeLimiter = buildLimiter({
+  prefix: 'captcha-challenge', windowMs: 5 * 60 * 1000, limit: 30,
+  message: 'Too many CAPTCHA requests. Please wait five minutes and try again.',
+});
+const captchaVerifyLimiter = buildLimiter({
+  prefix: 'captcha-verify', windowMs: 5 * 60 * 1000, limit: 15,
+  message: 'Too many CAPTCHA attempts. Please wait five minutes and try again.',
+});
+
 const passwordResetLimiter = buildLimiter({
   prefix: 'password-reset',
   windowMs: 60 * 60 * 1000,
@@ -141,6 +150,9 @@ const aiLimiter = buildLimiter({
 });
 
 module.exports = {
+  captchaChallengeLimiter,
+  captchaVerifyLimiter,
+  async getRedisClient() { await redisConnection; return redisClient; },
   accountSecurityLimiter,
   apiRateLimitKey,
   buildLimiter,

@@ -7,6 +7,7 @@ const { sendEmailViaGmail } = require('../services/gmailService');
 const { assertPasswordMeetsPolicy, PASSWORD_MIN_LENGTH, PASSWORD_MAX_LENGTH } = require('../utils/passwordPolicy');
 const { resolveStoredFileUrl } = require('../utils/fileStorage');
 const { getAppSettings } = require('../services/supabaseSettingsService');
+const { consumeVerificationToken } = require('../services/mathCaptchaService');
 const { getAdminLoginOtpEnabled } = require('../services/adminSecurityService');
 const { findAccountByLoginIdentifier } = require('../utils/loginIdentifier');
 const {
@@ -217,40 +218,11 @@ async function sendPasswordResetEmail({ email, name, resetLink }) {
   });
 }
 
-async function verifyRecaptchaToken({ token, remoteIp }) {
-  const recaptchaSecret = String(process.env.RECAPTCHA_SECRET_KEY || '').trim();
-  const captchaToken = String(token || '').trim();
-  if (!recaptchaSecret || !captchaToken) return false;
-
-  const payload = new URLSearchParams({
-    secret: recaptchaSecret,
-    response: captchaToken,
-  });
-  if (remoteIp) {
-    payload.append('remoteip', String(remoteIp));
-  }
-
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000);
-    const response = await fetch('https://www.google.com/recaptcha/api/siteverify', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: payload.toString(),
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-    if (!response.ok) return false;
-    const body = await response.json();
-    const allowedHostnames = String(process.env.RECAPTCHA_ALLOWED_HOSTNAMES || '')
-      .split(',')
-      .map((hostname) => hostname.trim().toLowerCase())
-      .filter(Boolean);
-    const verifiedHostname = String(body?.hostname || '').trim().toLowerCase();
-    return body?.success === true
-      && (allowedHostnames.length === 0 || allowedHostnames.includes(verifiedHostname));
-  } catch (_error) {
-    return false;
+async function requireCaptcha(req, action) {
+  if (!await consumeVerificationToken(req.body?.captchaToken, action)) {
+    const error = new Error('Please complete a new math CAPTCHA before submitting.');
+    error.statusCode = 400;
+    throw error;
   }
 }
 
@@ -271,17 +243,14 @@ const login = asyncHandler(async (req, res) => {
   }
 
   const settings = await getAppSettings();
-  const isCaptchaValid = settings.security.recaptchaEnabled === false || await verifyRecaptchaToken({
-    token: captchaToken,
-    remoteIp: resolveClientIpAddress(req),
-  });
+  const isCaptchaValid = await consumeVerificationToken(captchaToken, 'login');
   if (!isCaptchaValid) {
     await recordLoginAttempt(req, {
       username: normalizedUsername,
       outcome: 'failed',
-      reason: 'Please verify that you are not a robot',
+      reason: 'Math CAPTCHA verification is required',
     });
-    const error = new Error('Please verify that you are not a robot');
+    const error = new Error('Please complete a new math CAPTCHA before signing in.');
     error.statusCode = 400;
     throw error;
   }
@@ -639,6 +608,7 @@ const completeInvite = asyncHandler(async (req, res) => {
 });
 
 const requestPasswordReset = asyncHandler(async (req, res) => {
+  await requireCaptcha(req, 'forgot-password');
   const email = String(req.body?.email || '').toLowerCase().trim();
   if (!email) {
     const error = new Error('Email is required');

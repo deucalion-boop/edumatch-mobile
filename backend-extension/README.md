@@ -15,19 +15,20 @@ node backend-extension/install.cjs --backend ../Edumatch/backend --apply
 
 The installer copies runtime modules into `backend/mobile/`, copies migrations into `backend/supabase/migrations/`, and inserts one `/api/mobile` mount before the existing 404/error handlers. It backs up the previous `server.js`, refuses unmanaged file conflicts or ambiguous mount locations, and can be run again. It does not apply SQL or restart a service.
 
+For the math CAPTCHA migration, deploy the complete updated `backend/` tree in this repository. This installer does not copy the auth controller, math CAPTCHA service, root CAPTCHA routes, settings controller, or root rate limiters. Installing this extension alone into an older backend is insufficient. The source and installed mobile runtime changes are synchronized in this workspace; do not use `--apply` to install the CAPTCHA migration into the local deployment copy. See [complete installation and migration instructions](../docs/MATH-CAPTCHA-MIGRATION.md).
+
 Apply the existing migrations 001–012, then apply `013_mobile_attendance.sql` and `014_mobile_push.sql` to the same Supabase PostgreSQL database using your normal migration process. Both migrations use a transaction, enable RLS on all new tables, revoke direct client access, and restrict RPC execution to the backend service role. Do not expose the Supabase service key to the app. A backup and staging migration check belong in the school's normal deployment process.
 
 Add these values to the **backend** environment:
 
 ```dotenv
-RECAPTCHA_SITE_KEY=your_existing_recaptcha_v2_site_key
 EXPO_PROJECT_ID=your_eas_project_uuid
 EXPO_ACCESS_TOKEN=optional_expo_push_security_access_token
 SCHOOL_TIMEZONE=Asia/Manila
 EDUMATCH_BACKEND_ROOT=C:/path/to/Edumatch/backend
 ```
 
-Continue using the existing backend `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, private storage configuration, `JWT_SECRET`, Gmail OTP configuration, and `RECAPTCHA_SECRET_KEY`. Allow the API hostname in Google's reCAPTCHA configuration and in `RECAPTCHA_ALLOWED_HOSTNAMES`. Mobile native HTTP requests have no browser origin; the existing CORS policy permits these requests. The app uses only the existing `Authorization` and `Content-Type` headers.
+Continue using the existing backend `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, private storage configuration, `JWT_SECRET`, Gmail OTP configuration, and production `REDIS_URL`. Math CAPTCHA requires no provider keys or domain registration. Browser previews must be allowed in the backend's `CORS_ALLOWED_ORIGINS`. Mobile native HTTP requests have no browser origin; the existing CORS policy permits these requests. The app uses only the existing `Authorization` and `Content-Type` headers.
 
 Start the existing API normally. Run the durable push worker as a separate supervised process:
 
@@ -44,7 +45,7 @@ All protected requests send the same `Authorization: Bearer <token>` as the web 
 
 | Method and path, relative to `/api/mobile` | Role | Request / response |
 | --- | --- | --- |
-| `GET /captcha` | Public | HTTPS HTML page with configured reCAPTCHA v2. Posts `{type:'captcha',token}`, `{type:'expired'}`, or `{type:'error'}` to the native WebView bridge. No auth token goes into a URL. |
+| `GET /captcha` | Public | Compatibility redirect (HTTP 307) to `/api/captcha/challenge?action=login`, which returns JSON. The current app calls the root challenge/verify endpoints directly. |
 | `GET /me` | Any account | `{user}` using the login user shape, with safe section IDs. Works during forced password change using the existing self-account security authentication policy. |
 | `GET /bootstrap` | All five roles | `{user,dashboard:{metrics:[{label,value}],capabilities,insights?}}`. Calls only that role's existing server controllers. |
 | `POST /devices` | All five roles | `{installationId,expoPushToken,platform:'android'|'ios',projectId}` → `{device:{installationId,platform,enabled}}`. Binds the authenticated account and session. |
@@ -59,7 +60,7 @@ All protected requests send the same `Authorization: Bearer <token>` as the web 
 
 Session fields are `id`, `subjectId`, `dateKey`, `status` (`open`, `finalized`, `cancelled`), `expiresAt`, `lateAfter`, `createdAt`, `attendanceRecordId`, and `scanCount`. The QR is `edumatch://attendance/<sessionId>?token=<randomSecret>` and only the SHA-256 secret hash is stored on the server. List/create responses report a default zero scan count; the detail endpoint returns the live count. Finalized record fields include `id`, `dateKey`, `isLocked`, `lockedAt`, `subject`, `entries`, and `summary`.
 
-Existing login remains `POST /api/auth/login` with `{username,password,captchaToken,remember}`. It returns `202` and `{requiresOtp,challengeToken,expiresAt,resendAvailableAt,deliveryHint}`. Verify with `/api/auth/login/verify-otp` using `{challengeToken,otpCode,captchaToken}` and a **new CAPTCHA token**. This returns `{token,user}`. OTP resend uses `/api/auth/login/resend-otp`. Forced password change uses the existing `/api/auth/change-password`. The extension does not bypass CAPTCHA, OTP, maintenance, revoked sessions, token versions, or inactivity policy.
+Existing login remains `POST /api/auth/login` with `{username,password,captchaToken,remember}`. `captchaToken` is the backend-issued, single-use verification token from `/api/captcha/verify` for action `login`. Login returns `202` and `{requiresOtp,challengeToken,expiresAt,resendAvailableAt,deliveryHint}` when email OTP is required, or a session for an administrator whose personal OTP preference is off. Verify with `/api/auth/login/verify-otp` using `{challengeToken,otpCode}` to receive `{token,user}`. OTP resend uses `/api/auth/login/resend-otp`. `POST /api/auth/forgot-password` requires `{email,captchaToken}` verified for action `forgot-password`. Forced password change uses the existing `/api/auth/change-password`. The extension retains OTP, maintenance, revoked-session, token-version, and inactivity checks.
 
 Approvals, accounts, grading, academic monitoring, announcements, files, and manual attendance continue through the existing `/api/admin`, `/api/secretary`, `/api/headteacher`, `/api/teacher`, `/api/student`, `/api/notifications`, and `/api/storage` APIs. The mobile client never calculates authoritative grades or creates attendance for a supplied student ID.
 
