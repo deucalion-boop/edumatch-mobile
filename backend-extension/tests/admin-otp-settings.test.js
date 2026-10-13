@@ -61,8 +61,8 @@ function settingsFixture(initialRows = []) {
   return { state, service };
 }
 
-function personalRow(id, value) {
-  return { key: `admin-security:${id}`, value, updated_at: '2026-10-11T01:00:00.000Z' };
+function schoolRow(value) {
+  return { key: 'admin-security:school-login-otp', value, updated_at: '2026-10-11T01:00:00.000Z' };
 }
 
 async function callController(controller, req = {}) {
@@ -79,50 +79,50 @@ async function callController(controller, req = {}) {
 test('administrator OTP defaults on for missing and malformed preferences', async () => {
   assert.equal(await settingsFixture().service.getAdminLoginOtpEnabled('admin-1'), true);
   for (const value of [undefined, null, 0, '', 'false', {}, []]) {
-    const { service } = settingsFixture([personalRow('admin-1', { loginOtpEnabled: value })]);
+    const { service } = settingsFixture([schoolRow({ loginOtpEnabled: value })]);
     assert.equal(await service.getAdminLoginOtpEnabled('admin-1'), true);
   }
   for (const value of [null, 'false', [{ loginOtpEnabled: false }]]) {
-    assert.equal(await settingsFixture([personalRow('admin-1', value)]).service.getAdminLoginOtpEnabled('admin-1'), true);
+    assert.equal(await settingsFixture([schoolRow(value)]).service.getAdminLoginOtpEnabled('admin-1'), true);
   }
-  assert.equal(await settingsFixture([personalRow('admin-1', { loginOtpEnabled: false })]).service.getAdminLoginOtpEnabled('admin-1'), false);
+  assert.equal(await settingsFixture([schoolRow({ loginOtpEnabled: false })]).service.getAdminLoginOtpEnabled('admin-1'), false);
 });
 
-test('administrator OTP persists per account without changing global policies or another account', async () => {
+test('school OTP persists globally without changing unrelated or legacy account settings', async () => {
   const globalRow = { key: 'global', value: { user: { emailVerificationRequired: true }, security: { maxLoginAttempts: 4 } } };
-  const other = personalRow('admin-2', { loginOtpEnabled: false });
-  const fixture = settingsFixture([globalRow, other, personalRow('admin-1', { theme: 'dark', loginOtpEnabled: true })]);
+  const other = { key: 'admin-security:admin-2', value: { loginOtpEnabled: false } };
+  const fixture = settingsFixture([globalRow, other, schoolRow({ theme: 'dark', loginOtpEnabled: true })]);
   assert.equal(await fixture.service.saveAdminLoginOtpEnabled('admin-1', false), false);
   assert.equal(await fixture.service.getAdminLoginOtpEnabled('admin-1'), false);
   assert.equal(await fixture.service.getAdminLoginOtpEnabled('admin-2'), false);
   assert.deepEqual(fixture.state.rows.get('global'), globalRow);
   assert.deepEqual(fixture.state.rows.get('admin-security:admin-2'), other);
-  assert.equal(fixture.state.rows.get('admin-security:admin-1').value.theme, 'dark');
-  assert.equal(fixture.state.rows.get('admin-security:admin-1').updated_by, 'admin-1');
+  assert.equal(fixture.state.rows.get('admin-security:school-login-otp').value.theme, 'dark');
+  assert.equal(fixture.state.rows.get('admin-security:school-login-otp').updated_by, 'admin-1');
   assert.equal(await fixture.service.saveAdminLoginOtpEnabled('admin-1', true), true);
   assert.equal(await fixture.service.getAdminLoginOtpEnabled('admin-1'), true);
   assert.ok(fixture.state.events.every((event) => event.filters.key !== 'global' && event.payload?.key !== 'global'));
 });
 
-test('administrator OTP first save creates only the personal settings row', async () => {
+test('administrator OTP first save creates only the shared school settings row', async () => {
   const { state, service } = settingsFixture();
   assert.equal(await service.saveAdminLoginOtpEnabled('admin-1', false), false);
-  assert.deepEqual([...state.rows.keys()], ['admin-security:admin-1']);
-  assert.equal(state.rows.get('admin-security:admin-1').value.loginOtpEnabled, false);
+  assert.deepEqual([...state.rows.keys()], ['admin-security:school-login-otp']);
+  assert.equal(state.rows.get('admin-security:school-login-otp').value.loginOtpEnabled, false);
 });
 
-test('personal settings retry concurrent changes while preserving unrelated values', async () => {
-  const { state, service } = settingsFixture([personalRow('admin-1', { loginOtpEnabled: true, theme: 'old' })]);
-  state.conflict = { ...personalRow('admin-1', { loginOtpEnabled: true, theme: 'new', language: 'en' }), updated_at: '2026-10-11T02:00:00.000Z' };
+test('school settings retry concurrent changes while preserving unrelated values', async () => {
+  const { state, service } = settingsFixture([schoolRow({ loginOtpEnabled: true, theme: 'old' })]);
+  state.conflict = { ...schoolRow({ loginOtpEnabled: true, theme: 'new', language: 'en' }), updated_at: '2026-10-11T02:00:00.000Z' };
   await service.saveAdminLoginOtpEnabled('admin-1', false);
-  assert.deepEqual(state.rows.get('admin-security:admin-1').value, { loginOtpEnabled: false, theme: 'new', language: 'en' });
+  assert.deepEqual(state.rows.get('admin-security:school-login-otp').value, { loginOtpEnabled: false, theme: 'new', language: 'en' });
   const empty = settingsFixture();
-  empty.state.conflict = personalRow('admin-1', { theme: 'new' });
+  empty.state.conflict = schoolRow({ theme: 'new' });
   await empty.service.saveAdminLoginOtpEnabled('admin-1', false);
-  assert.equal(empty.state.rows.get('admin-security:admin-1').value.theme, 'new');
+  assert.equal(empty.state.rows.get('admin-security:school-login-otp').value.theme, 'new');
 });
 
-test('personal OTP read and write failures fail closed and reject nonboolean updates', async () => {
+test('school OTP read and write failures fail closed and reject nonboolean updates', async () => {
   const fixture = settingsFixture();
   fixture.state.error = { message: 'Unavailable' };
   await assert.rejects(fixture.service.getAdminLoginOtpEnabled('admin-1'), { statusCode: 503 });
@@ -156,14 +156,14 @@ test('OTP settings fetch and save are restricted to the authenticated administra
   const fixture = controllerFixture();
   const initial = await callController(fixture.controller.getAdminOtpSettings, fixture.request({ userId: 'admin-2' }));
   assert.equal(initial.failure, undefined);
-  assert.deepEqual(plain(initial.response.body.settings), { enabled: true, scope: 'account' });
+  assert.deepEqual(plain(initial.response.body.settings), { enabled: true, scope: 'school' });
   const req = fixture.request({ enabled: false, currentPassword: ' correct password ', userId: 'admin-2', id: 'admin-2' });
   const saved = await callController(fixture.controller.saveAdminOtpSettings, req);
   assert.equal(saved.failure, undefined);
-  assert.deepEqual(plain(saved.response.body.settings), { enabled: false, scope: 'account' });
+  assert.deepEqual(plain(saved.response.body.settings), { enabled: false, scope: 'school' });
   assert.deepEqual(fixture.events[0], ['account', 'id', 'admin-1']);
   assert.deepEqual(fixture.events[1], ['password', ' correct password ']);
-  assert.deepEqual([...fixture.state.rows.keys()], ['admin-security:admin-1']);
+  assert.deepEqual([...fixture.state.rows.keys()], ['admin-security:school-login-otp']);
   assert.equal(req.auditLogContext.targetId, 'admin-1');
   assert.equal(JSON.stringify(req.auditLogContext).includes('correct password'), false);
 });
@@ -286,11 +286,11 @@ test('OTP-off administrator login completes normal session issuance and consumes
   assert.equal(token[2].issuer, 'edumatch-api');
   const attempt = fixture.events.find(([name]) => name === 'attempt')[1];
   assert.equal(attempt.outcome, 'success');
-  assert.equal(attempt.reason, 'Login successful (admin OTP disabled)');
+  assert.equal(attempt.reason, 'Login successful (school login OTP disabled)');
   assert.equal(fixture.events.some(([name]) => name === 'challenge' || name === 'email'), false);
 });
 
-test('personal OTP preference applies on the next login and enabled policy ignores body bypass flags', async () => {
+test('school OTP preference applies on the next login and enabled policy ignores body bypass flags', async () => {
   const fixture = loginFixture();
   const enabled = await callController(fixture.controller.login, fixture.request({ requiresOtp: false, skipOtp: true, enabled: false, loginOtpEnabled: false }));
   assert.equal(enabled.failure, undefined);
@@ -324,26 +324,35 @@ test('OTP-off administrator login preserves remember-me and forced password chan
   assert.equal(token[2].expiresIn, '30d');
 });
 
-test('other roles always require OTP without reading an administrator preference', async () => {
-  const fixture = loginFixture();
-  fixture.state.enabled = false;
-  for (const role of ['student', 'teacher', 'headteacher', 'secretary']) {
-    fixture.user.role = role;
-    const result = await callController(fixture.controller.login, fixture.request({ loginOtpEnabled: false }));
-    assert.equal(result.failure, undefined);
-    assert.equal(result.response.statusCode, 202);
-    assert.equal(result.response.body.requiresOtp, true);
+test('admin saves off and on through the settings controller and all five roles follow on their next login', async () => {
+  const settings = controllerFixture();
+  for (const enabled of [false, true, false]) {
+    const saved = await callController(settings.controller.saveAdminOtpSettings,
+      settings.request({ enabled, currentPassword: ' correct password ' }));
+    assert.equal(saved.failure, undefined);
+    assert.deepEqual(plain(saved.response.body.settings), { enabled, scope: 'school' });
+    for (const role of ['admin', 'student', 'teacher', 'headteacher', 'secretary']) {
+      const fixture = loginFixture(settings.service);
+      fixture.user.role = role;
+      fixture.user._id = `${role}-account`;
+      const result = await callController(fixture.controller.login, fixture.request({ skipOtp: true }));
+      assert.equal(result.failure, undefined, role);
+      assert.equal(result.response.statusCode, enabled ? 202 : 200, role);
+      assert.equal(result.response.body.requiresOtp, enabled, role);
+      assert.equal(Boolean(result.response.body.token), !enabled, role);
+      assert.equal(fixture.events.some(([name]) => name === 'challenge'), enabled, role);
+      assert.equal(fixture.events.some(([name]) => name === 'email'), enabled, role);
+    }
   }
-  assert.equal(fixture.events.some(([name]) => name === 'preference' || name === 'session'), false);
 });
 
-test('saved OTP-off preferences and client bypass flags cannot disable OTP for other roles', async () => {
+test('legacy account preferences and client bypass flags cannot override the school OTP policy', async () => {
   const preferences = settingsFixture([
-    personalRow('admin-1', { loginOtpEnabled: false }),
+    { key: 'admin-security:admin-1', value: { loginOtpEnabled: false } },
     { key: 'account-security:admin-1', value: { loginOtpEnabled: false }, updated_at: '2026-10-11T01:00:00.000Z' },
   ]);
   const fixture = loginFixture(preferences.service);
-  for (const role of ['student', 'teacher', 'headteacher', 'secretary']) {
+  for (const role of ['admin', 'student', 'teacher', 'headteacher', 'secretary']) {
     fixture.user.role = role;
     const result = await callController(fixture.controller.login, fixture.request({
       role: 'admin', userId: 'admin-1', requiresOtp: false, skipOtp: true, enabled: false, loginOtpEnabled: false,
@@ -353,14 +362,9 @@ test('saved OTP-off preferences and client bypass flags cannot disable OTP for o
     assert.equal(result.response.body.requiresOtp, true);
     assert.equal(result.response.body.token, undefined);
   }
-  assert.equal(preferences.state.events.length, 0);
-  assert.equal(fixture.events.some(([name]) => name === 'preference' || name === 'session'), false);
-  fixture.user.role = 'admin';
-  const administrator = await callController(fixture.controller.login, fixture.request());
-  assert.equal(administrator.failure, undefined);
-  assert.equal(administrator.response.statusCode, 200);
-  assert.equal(administrator.response.body.requiresOtp, false);
-  assert.deepEqual(preferences.state.events.map(event => event.filters.key), ['admin-security:admin-1']);
+  assert.equal(preferences.state.events.length, 5);
+  assert.equal(fixture.events.some(([name]) => name === 'session'), false);
+  assert.ok(preferences.state.events.every(event => event.filters.key === 'admin-security:school-login-otp'));
 });
 
 test('OTP-off does not bypass CAPTCHA, incorrect passwords or account lockouts', async () => {
@@ -393,7 +397,7 @@ test('OTP-off does not bypass inactive accounts, missing credentials or Gmail po
   assert.equal(fixture.events.some(([name]) => name === 'preference' || name === 'session' || name === 'challenge'), false);
 });
 
-test('unavailable personal settings fail closed without issuing a login challenge or session', async () => {
+test('unavailable school settings fail closed without issuing a login challenge or session', async () => {
   const fixture = loginFixture();
   fixture.state.enabled = false;
   fixture.state.error = Object.assign(new Error('Unavailable'), { statusCode: 503 });
@@ -426,7 +430,7 @@ test('OTP-off administrator sign-in still sends the existing new-device security
   assert.equal(emails[0][1].subject, 'EduMatch security alert: new administrator sign-in');
 });
 
-test('an outstanding OTP challenge still needs a valid code even when personal OTP is off', async () => {
+test('an outstanding OTP challenge still needs a valid code even when school OTP is off', async () => {
   const fixture = loginFixture();
   fixture.state.enabled = false;
   const request = fixture.request({ challengeToken: 'a'.repeat(64), otpCode: '000000' });

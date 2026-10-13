@@ -87,14 +87,20 @@ function AccountCreator({ role, onClose, onSaved }: { role: Role; onClose: () =>
     : DEPARTMENTS.filter(option => role !== 'headteacher' || option === user!.department);
   const selectedDepartment = availableDepartments.find(option => option === department);
   const [sectionId, setSectionId] = useState('');
-  const sections = useQuery({ queryKey: ['sections', role], queryFn: () => edumatchApi.sections(role), enabled: accountRole === 'student', staleTime: 60_000 });
+  const [advisorySectionId, setAdvisorySectionId] = useState('');
+  const canAssignAdvisory = role === 'headteacher' && accountRole === 'teacher';
+  const sections = useQuery({ queryKey: ['sections', role], queryFn: () => edumatchApi.sections(role), enabled: accountRole === 'student' || canAssignAdvisory, staleTime: 60_000 });
   const availableSections = studentSectionOptions(sections.data || [], user!);
+  const advisorySections = (sections.data || []).filter(section => section.isActive !== false);
+  const invalidAdvisory = canAssignAdvisory && Boolean(advisorySectionId) &&
+    (!sections.isSuccess || !advisorySections.some(section => section.id === advisorySectionId));
   const selectedSectionId = role === 'teacher' ? availableSections[0]?.id || '' : sectionId;
   const create = useMutation({ mutationFn: () => edumatchApi.createUser(role, {
     name: name.trim(), email: email.trim(), username: username.trim(), role: accountRole,
     department: needsDepartment ? selectedDepartment : undefined,
     subject: accountRole === 'teacher' ? selectedDepartment : undefined,
     sectionId: accountRole === 'student' ? selectedSectionId || undefined : undefined,
+    advisorySectionId: canAssignAdvisory ? advisorySectionId || undefined : undefined,
   }), onSuccess: onSaved });
   return <Card><Heading title="New school account" /><View style={styles.chipRow}>{allowed.map(option => <Chip key={option} label={option === 'headteacher' ? 'Head Teacher' : option.charAt(0).toUpperCase() + option.slice(1)} active={accountRole === option} onPress={() => setAccountRole(option)} />)}</View>
     <Field label="Full name" value={name} onChangeText={setName} autoCapitalize="words" placeholder="Student or staff name" /><Field label="Email address" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" placeholder="School email address" />
@@ -113,7 +119,16 @@ function AccountCreator({ role, onClose, onSaved }: { role: Role; onClose: () =>
         {role === 'admin' && accountRole === 'teacher' ? <Button title="Create a Head Teacher" variant="secondary" onPress={() => { setAccountRole('headteacher'); setDepartment(''); create.reset(); }} /> : null}
       </> : null}
     </> : null}
-    {create.error ? <Notice message={errorMessage(create.error)} tone="error" /> : null}<Button title="Create account" loading={create.isPending} disabled={!name.trim() || !email.trim() || !username.trim() || (needsDepartment && !selectedDepartment) || (accountRole === 'student' && (!selectedSectionId || !availableSections.some(section => section.id === selectedSectionId)))} onPress={() => create.mutate()} /><Button title="Cancel" disabled={create.isPending} variant="plain" onPress={onClose} />
+    {canAssignAdvisory ? <>
+      <Heading title="Advisory class section" detail="Choose from all active school sections for this teacher, or leave unassigned." />
+      <QueryStatus loading={sections.isPending} error={sections.error} retry={() => void sections.refetch()} />
+      {sections.isSuccess ? <View style={styles.chipRow}>
+        <Chip label="No advisory section" active={!advisorySectionId} onPress={() => { if (!create.isPending) setAdvisorySectionId(''); }} />
+        {advisorySections.map(section => <Chip key={section.id} label={section.gradeLevel ? `Grade ${section.gradeLevel.replace(/^Grade\s*/i, '')} · ${section.name}` : section.name} active={advisorySectionId === section.id} onPress={() => { if (!create.isPending) setAdvisorySectionId(section.id); }} />)}
+      </View> : null}
+      {sections.isSuccess && !advisorySections.length ? <Notice message="No active sections are available. You can create the teacher without an advisory section." /> : null}
+    </> : null}
+    {create.error ? <Notice message={errorMessage(create.error)} tone="error" /> : null}<Button title="Create account" loading={create.isPending} disabled={!name.trim() || !email.trim() || !username.trim() || invalidAdvisory || (needsDepartment && !selectedDepartment) || (accountRole === 'student' && (!selectedSectionId || !availableSections.some(section => section.id === selectedSectionId)))} onPress={() => create.mutate()} /><Button title="Cancel" disabled={create.isPending} variant="plain" onPress={onClose} />
   </Card>;
 }
 

@@ -201,6 +201,25 @@ test('every account creation route submits and returns the chosen username', asy
   }
 });
 
+test('headteacher loads the section directory and submits the teacher advisory assignment', async () => {
+  const { edumatchApi, captured } = await transport(request => request.method === 'get'
+    ? { success: true, sections: [{ id: 'section-a', name: 'A', department: 'Science' }, { id: 'section-b', name: 'B', department: 'English' }] }
+    : { success: true, user: { id: 'teacher-new', ...(request.body as CreateUserInput) } });
+  const sections = await edumatchApi.sections('headteacher');
+  assert.equal(captured[0]?.url, '/headteacher/sections');
+  assert.deepEqual(sections.map(section => section.id), ['section-a', 'section-b']);
+  for (const advisorySectionId of ['section-b', undefined]) {
+    const account = await edumatchApi.createUser('headteacher', {
+      name: 'Teacher', email: 'teacher@gmail.com', username: 'teacher', role: 'teacher',
+      department: 'Science', advisorySectionId,
+    });
+    assert.equal(captured.at(-1)?.url, '/headteacher/teachers');
+    assert.equal((captured.at(-1)?.body as CreateUserInput).advisorySectionId, advisorySectionId);
+    assert.equal((captured.at(-1)?.body as CreateUserInput).sectionId, undefined);
+    assert.equal(account.advisorySectionId, advisorySectionId);
+  }
+});
+
 test('student subjects show pending enrollment and submit the teacher code through the existing endpoint', async () => {
   const { edumatchApi, captured } = await transport(request => request.method === 'get'
     ? { success: true, subjects: [{ id: 'approved', name: 'Math', className: 'A', enrollmentStatus: 'approved' }],

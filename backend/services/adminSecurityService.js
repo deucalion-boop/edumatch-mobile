@@ -4,6 +4,8 @@ function settingsError(error, message) {
   return Object.assign(new Error(message), { statusCode: 503, cause: error });
 }
 
+// One policy for every login role. Legacy admin-security:<userId> preferences
+// must never override it; the administrator explicitly saves the school policy.
 const LOGIN_OTP_SETTINGS_KEY = 'admin-security:school-login-otp';
 
 function rowValue(row) {

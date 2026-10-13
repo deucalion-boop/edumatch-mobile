@@ -198,7 +198,7 @@ export function SettingsScreen() {
 
   async function saveOtp() {
     const snapshot = accountSnapshot.current;
-    if (!canChangeOtp || busy || !isCurrent(snapshot) || otpQuery.isFetching || !otpChanged || typeof desiredOtp !== 'boolean' || !otpPassword) return;
+    if (!canChangeOtp || !schoolOtp || busy || !isCurrent(snapshot) || otpQuery.isFetching || !otpChanged || typeof desiredOtp !== 'boolean' || !otpPassword) return;
     setOtpBusy(true); setOtpFailure(null); setOtpMessage(null);
     try {
       const updated = await edumatchApi.updateAdminOtpSettings({ enabled: desiredOtp, currentPassword: otpPassword });
@@ -283,9 +283,10 @@ export function SettingsScreen() {
         {confirmPassword && confirmPassword !== newPassword ? <Text style={{ color: colors.danger, fontSize: 13 }}>The new passwords must match.</Text> : null}
         <Button title="Update password" loading={passwordBusy} disabled={(busy && !passwordBusy) || !currentPassword || !newPassword || newPassword !== confirmPassword} onPress={() => void changePassword()} />
       </Card>
-      {canChangeOtp ? <Card><Heading title="Sign-in OTP" detail={otpQuery.data ? schoolOtp ? 'Control the emailed verification code requirement for every school account.' : 'Control the emailed verification code requirement for your administrator account only.' : 'Manage the emailed verification code requirement for sign-in.'} />
+      {canChangeOtp ? <Card><Heading title="Sign-in OTP" detail="Control the emailed verification code requirement for all accounts: admin, headteacher, teacher, secretary, and student." />
         <QueryStatus loading={otpQuery.isPending} error={otpQuery.error} retry={() => void otpQuery.refetch()} />
-        {otpQuery.data && !otpQuery.error ? <>
+        {otpQuery.data?.scope === 'account' && !otpQuery.error ? <Notice tone="error" message="Your server only supports changing OTP for your administrator account. Update the school server to enable this switch for everyone. Other accounts still require OTP." /> : null}
+        {otpQuery.data && schoolOtp && !otpQuery.error ? <>
           <View style={styles.between}><View style={{ flex: 1, gap: 4 }}><Text style={styles.heading}>OTP {desiredOtp ? 'on' : 'off'}</Text><Text style={styles.bodyMuted}>Currently saved for {schoolOtp ? 'all accounts' : 'your account'}: {otpQuery.data.enabled ? 'On' : 'Off'}</Text></View><Switch accessibilityLabel={schoolOtp ? 'Sign-in OTP for all school accounts' : 'Sign-in OTP for your administrator account'} value={Boolean(desiredOtp)} onValueChange={enabled => { setOtpChoice(enabled); setOtpFailure(null); setOtpMessage(null); }} disabled={busy || otpQuery.isFetching} trackColor={{ false: colors.border, true: colors.primary }} thumbColor="#FFFFFF" /></View>
           {otpChanged && desiredOtp === false ? <Notice message={schoolOtp ? 'Turning OTP off removes the emailed verification step from sign-ins for all roles. The required math CAPTCHA remains in place.' : 'Turning OTP off removes the emailed verification step for your administrator account only. Other accounts are unaffected. The required math CAPTCHA remains in place.'} /> : null}
           {otpChanged ? <Field label="Current password to confirm OTP change" value={otpPassword} onChangeText={setOtpPassword} editable={!busy} secureTextEntry textContentType="password" autoCapitalize="none" autoCorrect={false} /> : null}

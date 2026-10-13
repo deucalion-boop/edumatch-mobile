@@ -269,7 +269,7 @@ function loginFixture() {
   return { controller, events, state, user, settings, challenge, request, env, issueToken };
 }
 
-test('valid math CAPTCHA preserves every role and administrator-only OTP preference', async () => {
+test('valid math CAPTCHA preserves every role and the school-wide OTP preference', async () => {
   const fixture = loginFixture();
   fixture.settings.security.recaptchaEnabled = false;
   fixture.state.otpEnabled = false;
@@ -277,13 +277,13 @@ test('valid math CAPTCHA preserves every role and administrator-only OTP prefere
     fixture.user.role = role;
     const result = await invoke(fixture.controller.login, fixture.request());
     assert.equal(result.failure, undefined);
-    assert.equal(result.response.statusCode, role === 'admin' ? 200 : 202);
-    assert.equal(result.response.body.requiresOtp, role !== 'admin');
-    assert.equal(Boolean(result.response.body.token), role === 'admin');
+    assert.equal(result.response.statusCode, 200);
+    assert.equal(result.response.body.requiresOtp, false);
+    assert.equal(Boolean(result.response.body.token), true);
   }
   assert.equal(fixture.events.filter(([event]) => event === 'captcha').length, 5);
-  assert.equal(fixture.events.filter(([event]) => event === 'otp-preference').length, 1);
-  assert.equal(fixture.events.filter(([event]) => event === 'session').length, 1);
+  assert.equal(fixture.events.filter(([event]) => event === 'otp-preference').length, 5);
+  assert.equal(fixture.events.filter(([event]) => event === 'session').length, 5);
 });
 
 test('math CAPTCHA preserves password lockout, account status and maintenance restrictions', async () => {

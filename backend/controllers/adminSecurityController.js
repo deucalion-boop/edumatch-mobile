@@ -12,7 +12,7 @@ function assertActiveAdmin(user) {
 
 const getAdminOtpSettings = asyncHandler(async (req, res) => {
     assertActiveAdmin(req.user);
-    const enabled = await getAdminLoginOtpEnabled(req.user._id);
+    const enabled = await getAdminLoginOtpEnabled();
     return sendSuccess(res, 200, 'School OTP settings fetched successfully', {
       settings: { enabled, scope: 'school' },
     });
