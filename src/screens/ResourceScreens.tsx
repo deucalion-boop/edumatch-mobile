@@ -22,7 +22,10 @@ function DetailFields({ row, fields }: { row: Record<string, unknown>; fields: {
   return <>{fields.map(field => {
     const rawValue = rawText(row, field.keys);
     const value = field.label === 'Role' ? rawValue.replace(/\b(headteacher|teacher|student|secretary|admin)\b/gi, role => role === 'headteacher' ? 'Head Teacher' : role.charAt(0).toUpperCase() + role.slice(1)) : rawValue;
-    return value ? <View key={field.label} style={styles.between}><Text style={[styles.bodyMuted, { flexShrink: 0 }]}>{field.label}</Text><Text style={[styles.body, { flex: 1, minWidth: 0, textAlign: 'right', fontWeight: '600' }]}>{value}</Text></View> : null;
+    return value ? <View key={field.label} style={[styles.between, { alignItems: 'flex-start' }]}>
+      <Text style={[styles.bodyMuted, { flex: 1, minWidth: 0, paddingRight: 2 }]}>{field.label}</Text>
+      <Text style={[styles.body, { flex: 2, minWidth: 0, textAlign: 'right', fontWeight: '600' }]}>{value}</Text>
+    </View> : null;
   })}</>;
 }
 
