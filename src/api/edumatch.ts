@@ -49,8 +49,10 @@ function profileUpdateBody(input: ProfileUpdateInput): ProfileUpdateInput {
 }
 function normalizeOtpSettings(value: unknown): AdminOtpSettings {
   const settings = object(value);
-  if (typeof settings.enabled !== 'boolean' || settings.scope !== 'school') throw new Error('The server returned invalid OTP settings.');
-  return { enabled: settings.enabled, scope: 'school' };
+  // Older deployments expose the administrator's personal OTP preference.
+  // Preserve the scope so the UI describes what the server actually changes.
+  if (typeof settings.enabled !== 'boolean' || (settings.scope !== 'school' && settings.scope !== 'account')) throw new Error('The server returned invalid OTP settings.');
+  return { enabled: settings.enabled, scope: settings.scope };
 }
 function normalizeCaptchaSettings(value: unknown): CaptchaSettings {
   const settings = object(value);

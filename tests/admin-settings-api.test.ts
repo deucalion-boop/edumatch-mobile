@@ -108,15 +108,21 @@ test('empty admin profile details are rejected before sending an update', async 
   assert.equal(requests.length, 0);
 });
 
-test('OTP settings preserve false, remain account scoped, and submit only the choice and password', async () => {
+test('OTP settings load, save both choices and reload with the server scope preserved', async () => {
+  for (const scope of ['account', 'school']) {
+  let enabled = true;
   const { edumatchApi, requests } = await transport(request => ({ success: true, settings: {
-    enabled: request.method === 'put' ? JSON.parse(request.data).enabled : true,
-    scope: 'account', updatedBy: 'private-admin', extra: 'ignored',
+    enabled: request.method === 'put' ? (enabled = JSON.parse(request.data).enabled) : enabled,
+    scope, updatedBy: 'private-admin', extra: 'ignored',
   } }));
-  assert.deepEqual(await edumatchApi.adminOtpSettings(), { enabled: true, scope: 'account' });
-  assert.deepEqual(await edumatchApi.updateAdminOtpSettings({ enabled: false, currentPassword: ' current password ' }), { enabled: false, scope: 'account' });
+  assert.deepEqual(await edumatchApi.adminOtpSettings(), { enabled: true, scope });
+  assert.deepEqual(await edumatchApi.updateAdminOtpSettings({ enabled: false, currentPassword: ' current password ' }), { enabled: false, scope });
   assert.deepEqual(JSON.parse(requests[1]?.data), { enabled: false, currentPassword: ' current password ' });
   assert.deepEqual(requests.map(request => [request.method, request.url]), [['get', '/admin/settings/otp'], ['put', '/admin/settings/otp']]);
+  assert.deepEqual(await edumatchApi.adminOtpSettings(), { enabled: false, scope });
+  assert.deepEqual(await edumatchApi.updateAdminOtpSettings({ enabled: true, currentPassword: 'secret' }), { enabled: true, scope });
+  assert.deepEqual(await edumatchApi.adminOtpSettings(), { enabled: true, scope });
+  }
 });
 
 test('missing confirmation and invalid OTP settings fail visibly', async () => {
@@ -124,9 +130,10 @@ test('missing confirmation and invalid OTP settings fail visibly', async () => {
   await assert.rejects(() => edumatchApi.updateAdminOtpSettings({ enabled: false, currentPassword: '' }), /current password/);
   await assert.rejects(() => edumatchApi.updateAdminOtpSettings({ enabled: 'false' as unknown as boolean, currentPassword: 'secret' }), /OTP setting/);
   assert.equal(requests.length, 0);
-  for (const settings of [undefined, {}, { enabled: 'false', scope: 'account' }, { enabled: true, scope: 'school' }]) {
+  for (const settings of [undefined, {}, { enabled: 'false', scope: 'account' }, { enabled: 'true', scope: 'school' }, { enabled: true }, { enabled: true, scope: 'unknown' }]) {
     const invalid = await transport(() => ({ success: true, settings }));
     await assert.rejects(() => invalid.edumatchApi.adminOtpSettings(), /invalid OTP settings/);
+    await assert.rejects(() => invalid.edumatchApi.updateAdminOtpSettings({ enabled: false, currentPassword: 'secret' }), /invalid OTP settings/);
   }
 });
 
