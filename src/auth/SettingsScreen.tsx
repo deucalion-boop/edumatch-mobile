@@ -203,7 +203,7 @@ export function SettingsScreen() {
       const updated = await edumatchApi.updateAdminOtpSettings({ enabled: desiredOtp, currentPassword: otpPassword });
       if (!isCurrent(snapshot)) return;
       client.setQueryData(otpKey, updated); setOtpChoice(null); setOtpPassword('');
-      setOtpMessage(updated.enabled ? 'OTP is on. Your next sign-in will require an emailed verification code.' : 'OTP is off. Your next sign-in will use your username and password.');
+      setOtpMessage(updated.enabled ? 'OTP is on. Sign-ins for all school accounts will require an emailed verification code.' : 'OTP is off. Sign-ins for all school accounts will use a username and password, along with the required math CAPTCHA.');
     } catch (error) { if (isCurrent(snapshot)) setOtpFailure(errorMessage(error)); }
     finally { if (isCurrent(snapshot)) setOtpBusy(false); }
   }
@@ -281,11 +281,11 @@ export function SettingsScreen() {
         {confirmPassword && confirmPassword !== newPassword ? <Text style={{ color: colors.danger, fontSize: 13 }}>The new passwords must match.</Text> : null}
         <Button title="Update password" loading={passwordBusy} disabled={(busy && !passwordBusy) || !currentPassword || !newPassword || newPassword !== confirmPassword} onPress={() => void changePassword()} />
       </Card>
-      {canChangeOtp ? <Card><Heading title="Sign-in OTP" detail="Add an emailed verification code when signing in to your admin account." />
+      {canChangeOtp ? <Card><Heading title="Sign-in OTP" detail="Control the emailed verification code requirement for every school account." />
         <QueryStatus loading={otpQuery.isPending} error={otpQuery.error} retry={() => void otpQuery.refetch()} />
         {otpQuery.data && !otpQuery.error ? <>
-          <View style={styles.between}><View style={{ flex: 1, gap: 4 }}><Text style={styles.heading}>OTP {desiredOtp ? 'on' : 'off'}</Text><Text style={styles.bodyMuted}>Currently saved: {otpQuery.data.enabled ? 'On' : 'Off'}</Text></View><Switch accessibilityLabel="Sign-in OTP for your admin account" value={Boolean(desiredOtp)} onValueChange={enabled => { setOtpChoice(enabled); setOtpFailure(null); setOtpMessage(null); }} disabled={busy || otpQuery.isFetching} trackColor={{ false: colors.border, true: colors.primary }} thumbColor="#FFFFFF" /></View>
-          {otpChanged && desiredOtp === false ? <Notice message="Turning OTP off removes the emailed verification step from your sign-in." /> : null}
+          <View style={styles.between}><View style={{ flex: 1, gap: 4 }}><Text style={styles.heading}>OTP {desiredOtp ? 'on' : 'off'}</Text><Text style={styles.bodyMuted}>Currently saved for all accounts: {otpQuery.data.enabled ? 'On' : 'Off'}</Text></View><Switch accessibilityLabel="Sign-in OTP for all school accounts" value={Boolean(desiredOtp)} onValueChange={enabled => { setOtpChoice(enabled); setOtpFailure(null); setOtpMessage(null); }} disabled={busy || otpQuery.isFetching} trackColor={{ false: colors.border, true: colors.primary }} thumbColor="#FFFFFF" /></View>
+          {otpChanged && desiredOtp === false ? <Notice message="Turning OTP off removes the emailed verification step from sign-ins for all roles. The required math CAPTCHA remains in place." /> : null}
           {otpChanged ? <Field label="Current password to confirm OTP change" value={otpPassword} onChangeText={setOtpPassword} editable={!busy} secureTextEntry textContentType="password" autoCapitalize="none" autoCorrect={false} /> : null}
           {otpFailure ? <Notice tone="error" message={otpFailure} /> : null}
           {otpMessage ? <Notice tone="success" message={otpMessage} /> : null}
@@ -294,7 +294,7 @@ export function SettingsScreen() {
       </Card> : null}
       {canViewCaptcha ? <Card><Heading title="School math CAPTCHA" detail="An addition or subtraction question protects login and password recovery." />
         <QueryStatus loading={captchaQuery.isPending} error={captchaQuery.error} retry={() => void captchaQuery.refetch()} />
-        {captchaQuery.data && !captchaQuery.error ? <Notice message="Math CAPTCHA is required for everyone signing in or requesting a password reset. Questions expire after five minutes and can only be answered once. Your account's OTP setting stays the same." /> : null}
+        {captchaQuery.data && !captchaQuery.error ? <Notice message="Math CAPTCHA is required for everyone signing in or requesting a password reset. Questions expire after five minutes and can only be answered once. The school-wide OTP setting is managed above." /> : null}
       </Card> : null}
     </> : null}
   </Screen>;

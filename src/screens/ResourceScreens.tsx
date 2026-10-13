@@ -20,8 +20,9 @@ function ItemCard({ item, children }: { item: ResourceItem; children?: React.Rea
 
 function DetailFields({ row, fields }: { row: Record<string, unknown>; fields: { label: string; keys: string[] }[] }) {
   return <>{fields.map(field => {
-    const value = rawText(row, field.keys);
-    return value ? <View key={field.label} style={styles.between}><Text style={styles.bodyMuted}>{field.label}</Text><Text style={[styles.body, { flex: 1, textAlign: 'right', fontWeight: '600' }]}>{value}</Text></View> : null;
+    const rawValue = rawText(row, field.keys);
+    const value = field.label === 'Role' ? rawValue.replace(/\b(headteacher|teacher|student|secretary|admin)\b/gi, role => role === 'headteacher' ? 'Head Teacher' : role.charAt(0).toUpperCase() + role.slice(1)) : rawValue;
+    return value ? <View key={field.label} style={styles.between}><Text style={[styles.bodyMuted, { flexShrink: 0 }]}>{field.label}</Text><Text style={[styles.body, { flex: 1, minWidth: 0, textAlign: 'right', fontWeight: '600' }]}>{value}</Text></View> : null;
   })}</>;
 }
 

@@ -4,11 +4,7 @@ function settingsError(error, message) {
   return Object.assign(new Error(message), { statusCode: 503, cause: error });
 }
 
-function settingsKey(userId) {
-  const id = String(userId || '').trim();
-  if (!id) throw Object.assign(new Error('Account is required'), { statusCode: 400 });
-  return `admin-security:${id}`;
-}
+const LOGIN_OTP_SETTINGS_KEY = 'admin-security:school-login-otp';
 
 function rowValue(row) {
   const value = row?.value;
@@ -22,8 +18,8 @@ async function readSettingsRow(key) {
   return data;
 }
 
-async function getAdminLoginOtpEnabled(userId) {
-  const row = await readSettingsRow(settingsKey(userId));
+async function getAdminLoginOtpEnabled() {
+  const row = await readSettingsRow(LOGIN_OTP_SETTINGS_KEY);
   // A missing or malformed preference keeps the existing email OTP protection.
   return rowValue(row).loginOtpEnabled !== false;
 }
@@ -32,7 +28,9 @@ async function saveAdminLoginOtpEnabled(userId, enabled) {
   if (typeof enabled !== 'boolean') {
     throw Object.assign(new Error('OTP setting must be on or off'), { statusCode: 400 });
   }
-  const key = settingsKey(userId);
+  const id = String(userId || '').trim();
+  if (!id) throw Object.assign(new Error('Administrator account is required'), { statusCode: 400 });
+  const key = LOGIN_OTP_SETTINGS_KEY;
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const previous = await readSettingsRow(key);
     const row = {

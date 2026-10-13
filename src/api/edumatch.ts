@@ -49,8 +49,8 @@ function profileUpdateBody(input: ProfileUpdateInput): ProfileUpdateInput {
 }
 function normalizeOtpSettings(value: unknown): AdminOtpSettings {
   const settings = object(value);
-  if (typeof settings.enabled !== 'boolean' || settings.scope !== 'account') throw new Error('The server returned invalid OTP settings.');
-  return { enabled: settings.enabled, scope: 'account' };
+  if (typeof settings.enabled !== 'boolean' || settings.scope !== 'school') throw new Error('The server returned invalid OTP settings.');
+  return { enabled: settings.enabled, scope: 'school' };
 }
 function normalizeCaptchaSettings(value: unknown): CaptchaSettings {
   const settings = object(value);
@@ -122,7 +122,8 @@ function userItem(row: DataRow): ResourceItem {
   const progress = object(row.progress);
   const recommendation = object(row.recommendation);
   const section = object(row.section);
-  const parts = [row.email, row.department || row.subject, row.gradeLevel && `Grade ${string(row.gradeLevel)}`,
+  const gradeLevel = string(row.gradeLevel).trim().replace(/^Grade\s+/i, '');
+  const parts = [row.email, row.department || row.subject, gradeLevel && `Grade ${gradeLevel}`,
     row.sectionName || section.name].map(string).filter(Boolean);
   return { id: id(row), title: string(row.name) || 'Account', subtitle: parts.join(' · '),
     status: string(row.status), description: string(recommendation.recommendationExplanation)

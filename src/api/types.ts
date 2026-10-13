@@ -1,7 +1,7 @@
 /** Canonical server roles. Principal accounts use the admin role. */
 export type Role = 'admin' | 'secretary' | 'headteacher' | 'teacher' | 'student';
 export type DataRow = Record<string, unknown>;
-export interface AdminOtpSettings { enabled: boolean; scope: 'account' }
+export interface AdminOtpSettings { enabled: boolean; scope: 'school' }
 export interface CaptchaSettings { enabled: true; scope: 'school' }
 export interface LoginSecuritySettings { captchaEnabled: true }
 export type CaptchaAction = 'login' | 'forgot-password';

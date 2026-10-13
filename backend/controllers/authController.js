@@ -368,7 +368,7 @@ const login = asyncHandler(async (req, res) => {
 
   assertGmailEmail(user.email);
 
-  if (user.role === 'admin' && !await getAdminLoginOtpEnabled(user._id)) {
+  if (!await getAdminLoginOtpEnabled()) {
     await consumeOpenChallenges(user._id);
     const signedInAt = new Date();
     user.lastLoginAt = signedInAt;
@@ -378,7 +378,7 @@ const login = asyncHandler(async (req, res) => {
       username: user.username,
       user,
       outcome: 'success',
-      reason: 'Login successful (admin OTP disabled)',
+      reason: 'Login successful (school login OTP disabled)',
     });
     const token = await createSessionAndSignToken(user, req, rememberSession);
     return sendSuccess(res, 200, 'Login successful', {

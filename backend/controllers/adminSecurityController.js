@@ -13,8 +13,8 @@ function assertActiveAdmin(user) {
 const getAdminOtpSettings = asyncHandler(async (req, res) => {
     assertActiveAdmin(req.user);
     const enabled = await getAdminLoginOtpEnabled(req.user._id);
-    return sendSuccess(res, 200, 'Account OTP settings fetched successfully', {
-      settings: { enabled, scope: 'account' },
+    return sendSuccess(res, 200, 'School OTP settings fetched successfully', {
+      settings: { enabled, scope: 'school' },
     });
 });
 
@@ -39,12 +39,12 @@ const saveAdminOtpSettings = asyncHandler(async (req, res) => {
     const saved = await saveAdminLoginOtpEnabled(account._id, enabled);
     req.auditLogContext = {
       ...req.auditLogContext,
-      actionLabel: saved ? 'Account login OTP enabled' : 'Account login OTP disabled',
+      actionLabel: saved ? 'School login OTP enabled' : 'School login OTP disabled',
       targetId: account._id,
       targetLabel: account.name || account.username || account.email,
     };
-    return sendSuccess(res, 200, 'Account OTP settings saved successfully', {
-      settings: { enabled: saved, scope: 'account' },
+    return sendSuccess(res, 200, 'School OTP settings saved successfully', {
+      settings: { enabled: saved, scope: 'school' },
     });
 });
 
