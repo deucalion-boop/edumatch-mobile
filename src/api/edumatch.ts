@@ -7,7 +7,7 @@ import type {
   AttendanceStatus, AuthSession, CaptchaAction, CaptchaChallenge, CaptchaSettings, CaptchaVerification, CreateAttendanceSessionInput, CreateUserInput,
   Dashboard, DataRow, Lesson, ListFilters, LoginChallenge, LoginInput, LoginResult, LoginSecuritySettings,
   Notification, Paginated, PublishAnnouncementInput, ResourceItem, ReviewGradeInput,
-  Role, SaveAttendanceInput, Section, Subject, User, VerifyOtpInput,
+  Role, SaveAttendanceInput, Section, StaffRegistrationInvite, Subject, User, VerifyOtpInput,
 } from './types';
 
 const roles = new Set<Role>(['admin', 'secretary', 'headteacher', 'teacher', 'student']);
@@ -325,6 +325,13 @@ export const edumatchApi = {
     const path = role === 'admin' || role === 'secretary' ? `/${role}/users`
       : role === 'headteacher' && input.role === 'teacher' ? '/headteacher/teachers' : `/${role}/students`;
     return normalizeUser((await post(path, { ...input, username })).user);
+  },
+  async createStaffRegistration(role: 'admin' | 'secretary', accountRole: 'secretary' | 'headteacher' | 'teacher'): Promise<StaffRegistrationInvite> {
+    const data = await post(`/${role}/users`, { selfRegistration: true, role: accountRole, status: 'pending' });
+    const invite = object(data.invite);
+    const inviteLink = string(invite.inviteLink).trim();
+    if (!inviteLink) throw new Error('The private registration link was not returned.');
+    return { inviteLink, inviteExpiresAt: string(invite.inviteExpiresAt || invite.expiresAt) || null };
   },
   async updateUser(role: 'admin' | 'secretary' | 'headteacher', userId: string, input: Partial<CreateUserInput>): Promise<User> {
     const path = role === 'headteacher' ? `/headteacher/teachers/${encoded(userId)}` : `/${role}/users/${encoded(userId)}`;

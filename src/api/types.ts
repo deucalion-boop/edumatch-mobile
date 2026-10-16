@@ -352,3 +352,7 @@ export interface CreateUserInput {
   advisorySectionId?: string;
   teacherId?: string;
 }
+export interface StaffRegistrationInvite {
+  inviteLink: string;
+  inviteExpiresAt?: string | null;
+}

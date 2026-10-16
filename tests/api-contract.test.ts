@@ -177,6 +177,20 @@ test('account creation requires username before sending requests for every creat
   assert.equal(captured.length, 0);
 });
 
+test('admin and secretary create web-compatible private staff registration links', async () => {
+  const { edumatchApi, captured } = await transport(request => ({ success: true, invite: {
+    inviteLink: `https://school.example/auth/invite/${(request.body as { role: string }).role}`,
+    inviteExpiresAt: '2026-10-17T08:00:00.000Z',
+  } }));
+  for (const [creator, accountRole] of [['admin', 'secretary'], ['admin', 'headteacher'], ['secretary', 'teacher']] as const) {
+    const invite = await edumatchApi.createStaffRegistration(creator, accountRole);
+    assert.equal(captured.at(-1)?.url, `/${creator}/users`);
+    assert.deepEqual(captured.at(-1)?.body, { selfRegistration: true, role: accountRole, status: 'pending' });
+    assert.equal(invite.inviteLink, `https://school.example/auth/invite/${accountRole}`);
+    assert.equal(invite.inviteExpiresAt, '2026-10-17T08:00:00.000Z');
+  }
+});
+
 test('every account creation route submits and returns the chosen username', async () => {
   const { edumatchApi, captured } = await transport(request => ({ success: true,
     user: { id: 'new-user', ...(request.body as CreateUserInput) } }));

@@ -1,11 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Text, View } from 'react-native';
+import { Platform, Share, Text, View } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../auth/AuthProvider';
 import { DEPARTMENTS } from '../auth/roles';
 import { isGradeTenStudent } from '../auth/studentAccess';
 import { edumatchApi, notificationApi } from '../api/edumatch';
-import type { Approval, ResourceItem, Role } from '../api/types';
+import type { Approval, ResourceItem, Role, User } from '../api/types';
 import { Badge, Button, Card, Chip, confirmAction, Empty, errorMessage, Field, Heading, Notice, QueryStatus, Screen, styles } from '../components/ui';
 import { displayDate, featureNames, rawText } from './roleConfig';
 import { studentSectionOptions } from './studentSections';
@@ -81,11 +81,13 @@ export function RecordsScreen() {
 
 function AccountCreator({ role, onClose, onSaved }: { role: Role; onClose: () => void; onSaved: () => void }) {
   const { user } = useAuth();
-  const allowed: Role[] = role === 'teacher' ? ['student'] : role === 'headteacher' ? ['teacher'] : role === 'secretary' ? ['student', 'teacher'] : ['student', 'teacher', 'headteacher', 'secretary'];
+  const privateStaffRegistration = role === 'admin' || role === 'secretary';
+  const allowed: Role[] = role === 'teacher' ? ['student'] : role === 'headteacher' ? ['teacher'] : role === 'secretary' ? ['headteacher', 'teacher'] : ['secretary', 'teacher', 'headteacher'];
   const [accountRole, setAccountRole] = useState<Role>(allowed[0]!);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
+  const [inviteLink, setInviteLink] = useState('');
   const [department, setDepartment] = useState(role === 'headteacher' ? user!.department || '' : '');
   const needsDepartment = accountRole === 'headteacher' || accountRole === 'teacher';
   const needsHeadTeacherDirectory = accountRole === 'teacher' && (role === 'admin' || role === 'secretary');
@@ -103,14 +105,29 @@ function AccountCreator({ role, onClose, onSaved }: { role: Role; onClose: () =>
   const invalidAdvisory = canAssignAdvisory && Boolean(advisorySectionId) &&
     (!sections.isSuccess || !advisorySections.some(section => section.id === advisorySectionId));
   const selectedSectionId = role === 'teacher' ? availableSections[0]?.id || '' : sectionId;
-  const create = useMutation({ mutationFn: () => edumatchApi.createUser(role, {
-    name: name.trim(), email: email.trim(), username: username.trim(), role: accountRole,
-    department: needsDepartment ? selectedDepartment : undefined,
-    subject: accountRole === 'teacher' ? selectedDepartment : undefined,
-    sectionId: accountRole === 'student' ? selectedSectionId || undefined : undefined,
-    advisorySectionId: canAssignAdvisory ? advisorySectionId || undefined : undefined,
-  }), onSuccess: onSaved });
-  return <Card><Heading title="New school account" /><View style={styles.chipRow}>{allowed.map(option => <Chip key={option} label={option === 'headteacher' ? 'Head Teacher' : option.charAt(0).toUpperCase() + option.slice(1)} active={accountRole === option} onPress={() => setAccountRole(option)} />)}</View>
+  const create = useMutation<User | { inviteLink: string; inviteExpiresAt: string | null }>({ mutationFn: () => privateStaffRegistration
+    ? edumatchApi.createStaffRegistration(role, accountRole as 'secretary' | 'headteacher' | 'teacher')
+    : edumatchApi.createUser(role, {
+      name: name.trim(), email: email.trim(), username: username.trim(), role: accountRole,
+      department: needsDepartment ? selectedDepartment : undefined,
+      subject: accountRole === 'teacher' ? selectedDepartment : undefined,
+      sectionId: accountRole === 'student' ? selectedSectionId || undefined : undefined,
+      advisorySectionId: canAssignAdvisory ? advisorySectionId || undefined : undefined,
+    }), onSuccess: result => {
+      if (privateStaffRegistration && typeof result.inviteLink === 'string') setInviteLink(result.inviteLink);
+      else onSaved();
+    } });
+  async function shareInvite() {
+    if (!inviteLink) return;
+    if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard) await navigator.clipboard.writeText(inviteLink);
+    else await Share.share({ title: 'EduMatch private registration link', message: inviteLink, url: inviteLink });
+  }
+  return <Card><Heading title={privateStaffRegistration ? 'Create private registration link' : 'New school account'} detail={privateStaffRegistration ? 'Choose a staff role, then privately share the link so they can enter their own account details and password.' : undefined} /><View style={styles.chipRow}>{allowed.map(option => <Chip key={option} label={option === 'headteacher' ? 'Head Teacher' : option.charAt(0).toUpperCase() + option.slice(1)} active={accountRole === option} onPress={() => { setAccountRole(option); setInviteLink(''); create.reset(); }} />)}</View>
+    {privateStaffRegistration ? <>
+      <Notice message="The account remains pending until the invited staff member completes registration. The private link expires after 24 hours." />
+      {inviteLink ? <><Field label="Private registration link" value={inviteLink} editable={false} /><Button title={Platform.OS === 'web' ? 'Copy private link' : 'Share private link'} icon={Platform.OS === 'web' ? 'copy-outline' : 'share-outline'} onPress={() => void shareInvite()} /><Button title="Done" variant="secondary" onPress={onSaved} /></> : <><Button title="Generate private registration link" icon="link-outline" loading={create.isPending} onPress={() => create.mutate()} /><Button title="Cancel" disabled={create.isPending} variant="plain" onPress={onClose} /></>}
+      {create.error ? <Notice message={errorMessage(create.error)} tone="error" /> : null}
+    </> : <>
     <Field label="Full name" value={name} onChangeText={setName} autoCapitalize="words" placeholder="Student or staff name" /><Field label="Email address" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" placeholder="School email address" />
     <Field label="Username" value={username} onChangeText={setUsername} autoCapitalize="none" autoCorrect={false} maxLength={50} placeholder="Student or staff username" />
     {accountRole === 'student' ? <>
@@ -123,8 +140,7 @@ function AccountCreator({ role, onClose, onSaved }: { role: Role; onClose: () =>
       {needsHeadTeacherDirectory ? <QueryStatus loading={headTeachers.isPending} error={headTeachers.error} retry={() => void headTeachers.refetch()} /> : null}
       <View style={styles.chipRow}>{availableDepartments.map(option => <Chip key={option} label={option} active={selectedDepartment === option} onPress={() => setDepartment(option)} />)}</View>
       {!availableDepartments.length && (!needsHeadTeacherDirectory || headTeachers.isSuccess) ? <>
-        <Notice message={role === 'headteacher' ? 'Your account needs an assigned department before you can add teachers.' : role === 'admin' ? 'Create a Head Teacher account first to make a department available for teachers.' : 'No departments are available for teachers. Ask your school administrator to create a Head Teacher account first.'} />
-        {role === 'admin' && accountRole === 'teacher' ? <Button title="Create a Head Teacher" variant="secondary" onPress={() => { setAccountRole('headteacher'); setDepartment(''); create.reset(); }} /> : null}
+        <Notice message={role === 'headteacher' ? 'Your account needs an assigned department before you can add teachers.' : 'No departments are available for teachers. Ask your school administrator to create a Head Teacher account first.'} />
       </> : null}
     </> : null}
     {canAssignAdvisory ? <>
@@ -136,7 +152,8 @@ function AccountCreator({ role, onClose, onSaved }: { role: Role; onClose: () =>
       </View> : null}
       {sections.isSuccess && !advisorySections.length ? <Notice message="No active sections are available. You can create the teacher without an advisory section." /> : null}
     </> : null}
-    {create.error ? <Notice message={errorMessage(create.error)} tone="error" /> : null}<Button title="Create account" loading={create.isPending} disabled={!name.trim() || !email.trim() || !username.trim() || invalidAdvisory || (needsDepartment && !selectedDepartment) || (accountRole === 'student' && (!selectedSectionId || !availableSections.some(section => section.id === selectedSectionId)))} onPress={() => create.mutate()} /><Button title="Cancel" disabled={create.isPending} variant="plain" onPress={onClose} />
+    {create.error ? <Notice message={errorMessage(create.error)} tone="error" /> : null}<Button title={accountRole === 'teacher' ? 'Create Teacher & Email Credentials' : 'Create Student & Email Credentials'} loading={create.isPending} disabled={!name.trim() || !email.trim() || !username.trim() || invalidAdvisory || (needsDepartment && !selectedDepartment) || (accountRole === 'student' && (!selectedSectionId || !availableSections.some(section => section.id === selectedSectionId)))} onPress={() => create.mutate()} /><Button title="Cancel" disabled={create.isPending} variant="plain" onPress={onClose} />
+    </>}
   </Card>;
 }
 
