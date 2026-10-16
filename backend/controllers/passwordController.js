@@ -24,10 +24,10 @@ const changePassword = asyncHandler(async (req, res) => {
   }
 
   if (req.user?.role === 'teacher' && passwordLengthError(currentPassword)) {
-    throw Object.assign(new Error('Current password must be 8-17 characters.'), { statusCode: 400 });
+    throw Object.assign(new Error('Current password must be 8-16 characters.'), { statusCode: 400 });
   }
 
-  assertPasswordMeetsPolicy(newPassword, req.user?.role === 'teacher' ? 17 : undefined);
+  assertPasswordMeetsPolicy(newPassword);
 
   const user = await findSupabaseAccount('id', req.user?._id);
   if (!user) {

@@ -186,6 +186,7 @@ export function SettingsScreen() {
   async function changePassword() {
     const snapshot = accountSnapshot.current;
     if (busy || !isCurrent(snapshot) || !currentPassword || !newPassword || newPassword !== confirmPassword) return;
+    if (newPassword.length < 8 || newPassword.length > 16) { setPasswordFailure('New password must be 8–16 characters.'); return; }
     setPasswordBusy(true); setPasswordFailure(null);
     try {
       await authApi.changePassword({ currentPassword, newPassword, confirmNewPassword: confirmPassword });
@@ -277,9 +278,10 @@ export function SettingsScreen() {
     {section === 'security' ? <>
       <Card><Heading title="Change password" detail="After updating your password, sign in again with your new password." />
         {passwordFailure ? <Notice tone="error" message={passwordFailure} /> : null}
-        <Field label="Current password" value={currentPassword} onChangeText={setCurrentPassword} editable={!busy} secureTextEntry textContentType="password" autoCapitalize="none" autoCorrect={false} />
-        <Field label="New password" value={newPassword} onChangeText={setNewPassword} editable={!busy} secureTextEntry textContentType="newPassword" autoCapitalize="none" autoCorrect={false} />
-        <Field label="Confirm new password" value={confirmPassword} onChangeText={setConfirmPassword} editable={!busy} secureTextEntry textContentType="newPassword" autoCapitalize="none" autoCorrect={false} />
+        <Field label="Current password" value={currentPassword} onChangeText={setCurrentPassword} editable={!busy} secureTextEntry textContentType="password" autoCapitalize="none" autoCorrect={false} maxLength={16} />
+        <Field label="New password" value={newPassword} onChangeText={setNewPassword} editable={!busy} secureTextEntry textContentType="newPassword" autoCapitalize="none" autoCorrect={false} maxLength={16} />
+        <Field label="Confirm new password" value={confirmPassword} onChangeText={setConfirmPassword} editable={!busy} secureTextEntry textContentType="newPassword" autoCapitalize="none" autoCorrect={false} maxLength={16} />
+        <Text style={{ color: colors.muted, fontSize: 13 }}>Use 8–16 characters.</Text>
         {confirmPassword && confirmPassword !== newPassword ? <Text style={{ color: colors.danger, fontSize: 13 }}>The new passwords must match.</Text> : null}
         <Button title="Update password" loading={passwordBusy} disabled={(busy && !passwordBusy) || !currentPassword || !newPassword || newPassword !== confirmPassword} onPress={() => void changePassword()} />
       </Card>

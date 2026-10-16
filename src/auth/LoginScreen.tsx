@@ -62,7 +62,7 @@ export function LoginScreen() {
   const passwordInput = useRef<TextInput>(null);
   const expirySeconds = challenge ? secondsUntil(challenge.expiresAt, now) : null;
   const resendSeconds = challenge ? secondsUntil(challenge.resendAvailableAt, now) : null;
-  const canSignIn = !configurationError && !loading && (challenge ? code.length === 6 && expirySeconds !== 0 : !!username.trim() && !!password);
+  const canSignIn = !configurationError && !loading && (challenge ? code.length === 6 && expirySeconds !== 0 : !!username.trim() && password.length >= 8 && password.length <= 16);
 
   useEffect(() => { if (recover === '1') setRecovering(true); }, [recover]);
   useEffect(() => {
@@ -113,7 +113,7 @@ export function LoginScreen() {
   const beginSignIn = async () => {
     if (loading || configurationError || requestInFlight.current || captchaOpen.current) return;
     if (!canSignIn) {
-      setError(challenge ? expirySeconds === 0 ? 'This code has expired. Request a new code.' : 'Enter the six-digit verification code.' : !username.trim() ? 'Enter your username.' : 'Enter your password.');
+      setError(challenge ? expirySeconds === 0 ? 'This code has expired. Request a new code.' : 'Enter the six-digit verification code.' : !username.trim() ? 'Enter your username.' : 'Password must be 8–16 characters.');
       if (!challenge) { if (!username.trim()) usernameInput.current?.focus(); else passwordInput.current?.focus(); }
       return;
     }
@@ -189,7 +189,7 @@ export function LoginScreen() {
             <TextAction title={resendSeconds !== null && resendSeconds > 0 ? `Resend code in ${resendSeconds}s` : 'Resend code'} disabled={loading || (resendSeconds !== null && resendSeconds > 0)} onPress={() => void resend()} />
           </> : <>
             <LoginInput inputRef={usernameInput} label="Username" icon="person-outline" value={username} onChangeText={setUsername} placeholder="Enter your username" autoCapitalize="none" autoCorrect={false} textContentType="username" autoComplete="username" editable={!loading} returnKeyType="next" onSubmitEditing={() => passwordInput.current?.focus()} />
-            <LoginInput inputRef={passwordInput} label="Password" icon="lock-closed-outline" value={password} onChangeText={setPassword} placeholder="Enter your password" secureTextEntry={!showPassword} textContentType="password" autoComplete="current-password" autoCapitalize="none" autoCorrect={false} editable={!loading} returnKeyType="done" onSubmitEditing={() => void beginSignIn()}
+            <LoginInput inputRef={passwordInput} label="Password" icon="lock-closed-outline" value={password} onChangeText={setPassword} placeholder="Enter your password" secureTextEntry={!showPassword} textContentType="password" autoComplete="current-password" autoCapitalize="none" autoCorrect={false} maxLength={16} editable={!loading} returnKeyType="done" onSubmitEditing={() => void beginSignIn()}
               trailing={<Pressable accessibilityRole="button" accessibilityLabel={showPassword ? 'Hide password' : 'Show password'} accessibilityState={{ disabled: loading }} aria-disabled={loading} disabled={loading} onPress={() => setShowPassword(value => !value)} style={styles.passwordToggle}><Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={21} color={loginColors.deepGreen} /></Pressable>} />
             <View style={[styles.accountOptions, (compact || fontScale > 1.25) && styles.stackedOptions]}>
               <Pressable accessibilityRole="checkbox" accessibilityLabel="Remember Me" accessibilityHint="Keep this account signed in on this device" accessibilityState={{ checked: remember, disabled: loading }} aria-checked={remember} aria-disabled={loading} disabled={loading} onPress={() => setRemember(value => !value)} style={({ pressed }) => [styles.remember, pressed && { opacity: 0.7 }]}>
@@ -245,10 +245,10 @@ function TextAction({ title, icon, onPress, disabled = false }: { title: string;
 function LoginAction({ title, loadingTitle, onPress, loading, disabled }: {
   title: string; loadingTitle: string; onPress: () => void; loading: boolean; disabled: boolean;
 }) {
-  const { fontScale } = useWindowDimensions();
+  const isGreenAction = title === 'Log In' || title === 'Send reset link';
   return <Pressable accessibilityRole="button" accessibilityLabel={loading ? loadingTitle : title} accessibilityState={{ disabled: disabled || loading, busy: loading }} aria-disabled={disabled || loading} aria-busy={loading} disabled={disabled || loading} onPress={onPress} style={({ pressed }) => [styles.submit, (disabled || loading) && { opacity: 0.62 }, pressed && { opacity: 0.85 }]}>
-    <LinearGradient colors={loginGradient} locations={[0, 0.5, 1]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.submitGradient}>
-      <View style={[styles.submitContent, title === 'Log In' && !loading && fontScale > 1.3 && styles.submitContrast]}>{loading && <ActivityIndicator size="small" color={loginColors.darkGreen} />}<Text style={styles.submitTitle}>{loading ? loadingTitle : title}</Text></View>
+    <LinearGradient colors={isGreenAction ? [loginColors.deepGreen, loginColors.deepGreen, loginColors.deepGreen] : loginGradient} locations={[0, 0.5, 1]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.submitGradient}>
+      <View style={styles.submitContent}>{loading && <ActivityIndicator size="small" color={isGreenAction ? '#FFFFFF' : loginColors.darkGreen} />}<Text style={[styles.submitTitle, isGreenAction && styles.loginSubmitTitle]}>{loading ? loadingTitle : title}</Text></View>
     </LinearGradient>
   </Pressable>;
 }
@@ -272,8 +272,9 @@ const styles = StyleSheet.create({
   remember: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 1 }, checkbox: { width: 19, height: 19, borderRadius: 6, borderWidth: 1.5, borderColor: '#A4B39B', backgroundColor: loginColors.card, alignItems: 'center', justifyContent: 'center' }, checkboxChecked: { backgroundColor: loginColors.deepGreen, borderColor: loginColors.deepGreen }, rememberText: { flexShrink: 1, fontFamily: loginFonts.medium, color: loginColors.muted, fontSize: 11, lineHeight: 18 },
   submit: { borderRadius: 14, shadowColor: loginColors.green, shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.22, shadowRadius: 10, elevation: 3 },
   submitGradient: { minHeight: 56, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  submitContent: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 5, borderRadius: 10 }, submitContrast: { backgroundColor: loginColors.gold },
+  submitContent: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 5, borderRadius: 10 },
   submitTitle: { fontFamily: loginFonts.bold, color: loginColors.darkGreen, fontSize: 15, lineHeight: 22, flexShrink: 1 },
+  loginSubmitTitle: { color: '#FFFFFF' },
   textAction: { minHeight: 44, borderRadius: 8, paddingHorizontal: 2, paddingVertical: 12, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6, flexShrink: 1 }, textActionTitle: { fontFamily: loginFonts.semibold, color: loginColors.deepGreen, fontSize: 11, lineHeight: 18, flexShrink: 1 },
   copyright: { fontFamily: loginFonts.regular, color: loginColors.muted, fontSize: 10, lineHeight: 17, textAlign: 'center' }, notice: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#E4D39C', backgroundColor: '#FFF9E8' }, errorNotice: { backgroundColor: '#FFF3F2', borderColor: '#F3D0CB' }, noticeText: { flex: 1, fontFamily: loginFonts.regular, color: '#6E542A', fontSize: 13, lineHeight: 20 },
 });

@@ -34,7 +34,7 @@ const userSchema = new mongoose.Schema(
           const normalized = String(value);
           // Allow persisted bcrypt hashes while enforcing the application password bounds.
           if (BCRYPT_HASH_REGEX.test(normalized)) return true;
-          return normalized.length >= 8 && normalized.length <= 17;
+          return normalized.length >= 8 && normalized.length <= 16;
         },
         message: 'Password must be between 8 and 16 characters',
       },

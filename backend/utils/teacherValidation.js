@@ -11,7 +11,7 @@ const phoneError = (value) => {
 }
 const passwordLengthError = (value) => {
   const length = String(value || '').length
-  return length >= 8 && length <= 17 ? '' : 'Password must be 8-17 characters.'
+  return length >= 8 && length <= 16 ? '' : 'Password must be 8-16 characters.'
 }
 
 module.exports = { nameError, phoneError, passwordLengthError };

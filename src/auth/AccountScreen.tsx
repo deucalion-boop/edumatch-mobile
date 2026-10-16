@@ -21,6 +21,7 @@ function RequiredPasswordScreen() {
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const change = async () => {
+    if (newPassword.length < 8 || newPassword.length > 16) { setFailure('New password must be 8–16 characters.'); return; }
     setBusy(true); setFailure(null);
     try {
       await authApi.changePassword({ currentPassword, newPassword, confirmNewPassword });
@@ -33,9 +34,10 @@ function RequiredPasswordScreen() {
     {failure && <Notice message={failure} tone="error" />}
     <Card><Text style={{ color: colors.ink, fontSize: 23, fontWeight: '700' }}>{user?.name}</Text><Text style={{ color: colors.muted, marginTop: 6 }}>{user ? ROLE_LABELS[user.role] : ''}</Text>{user?.email && <Text style={{ color: colors.muted, marginTop: 6 }}>{user.email}</Text>}</Card>
     <Card><Text style={{ fontWeight: '700', color: colors.ink, fontSize: 18, marginBottom: 16 }}>Change password</Text><View style={{ gap: 12 }}>
-      <Field label="Current password" value={currentPassword} onChangeText={setCurrent} secureTextEntry textContentType="password" />
-      <Field label="New password" value={newPassword} onChangeText={setNew} secureTextEntry textContentType="newPassword" />
-      <Field label="Confirm new password" value={confirmNewPassword} onChangeText={setConfirm} secureTextEntry textContentType="newPassword" />
+      <Field label="Current password" value={currentPassword} onChangeText={setCurrent} secureTextEntry textContentType="password" maxLength={16} />
+      <Field label="New password" value={newPassword} onChangeText={setNew} secureTextEntry textContentType="newPassword" maxLength={16} />
+      <Field label="Confirm new password" value={confirmNewPassword} onChangeText={setConfirm} secureTextEntry textContentType="newPassword" maxLength={16} />
+      <Text style={{ color: colors.muted, fontSize: 13 }}>Use 8–16 characters.</Text>
       <Button title="Update password" loading={busy} disabled={!currentPassword || !newPassword || newPassword !== confirmNewPassword} onPress={() => void change()} />
     </View></Card>
     <Button title="Sign out" variant="secondary" disabled={busy} onPress={() => void signOut()} />
