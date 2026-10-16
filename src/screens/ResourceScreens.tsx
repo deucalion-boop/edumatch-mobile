@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Text, View } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../auth/AuthProvider';
@@ -10,6 +10,7 @@ import { Badge, Button, Card, Chip, confirmAction, Empty, errorMessage, Field, H
 import { displayDate, featureNames, rawText } from './roleConfig';
 import { studentSectionOptions } from './studentSections';
 import { teacherDepartmentOptions } from './teacherDepartments';
+import { getListPage } from './listPagination';
 
 function ItemCard({ item, children }: { item: ResourceItem; children?: React.ReactNode }) {
   return <Card><View style={styles.between}><Text style={[styles.heading, { flex: 1 }]}>{item.title}</Text><Badge label={item.status} /></View>
@@ -39,6 +40,7 @@ export function RecordsScreen() {
   const [schoolYear, setSchoolYear] = useState('');
   const [creating, setCreating] = useState(false);
   const [message, setMessage] = useState('');
+  const [page, setPage] = useState(1);
   const client = useQueryClient();
   const query = useQuery({ queryKey: ['records', role, user!.gradeLevel, filter, archived, schoolYear], queryFn: async (): Promise<ResourceItem[]> => {
     if (role === 'student' && !isGradeTenStudent(user!)) {
@@ -50,6 +52,8 @@ export function RecordsScreen() {
   }, staleTime: 30_000 });
   const requestExport = useMutation({ mutationFn: () => edumatchApi.requestArchivedExport({ schoolYear: schoolYear.trim() || undefined, searchTerm: filter || undefined }), onSuccess: async () => { setMessage('Your archived records export request has been sent for administrator approval.'); await client.invalidateQueries({ queryKey: ['approvals'] }); } });
   const archive = useMutation({ mutationFn: () => edumatchApi.archiveSchoolYear(schoolYear.trim()), onSuccess: async () => { setMessage('The school year has been archived.'); setArchived(true); await client.invalidateQueries({ queryKey: ['records'] }); } });
+  const pagination = getListPage(query.data || [], page);
+  useEffect(() => { setPage(1); }, [filter, archived, schoolYear, role]);
   return <Screen title={managingUsers ? featureNames.records : 'School records'} subtitle={managingUsers ? 'Find and manage school user accounts.' : 'Find the records available to your account.'} refreshing={query.isRefetching} onRefresh={() => void query.refetch()}>
     {message ? <Notice message={message} tone="success" /> : null}
     {role !== 'student' && !creating ? <Button title={role === 'teacher' ? 'Add a student' : role === 'headteacher' ? 'Add a teacher' : 'Add a school account'} icon="person-add-outline" onPress={() => setCreating(true)} /> : null}
@@ -62,11 +66,15 @@ export function RecordsScreen() {
       {archived ? <Button title="Request records export" variant="secondary" icon="document-text-outline" loading={requestExport.isPending} onPress={() => requestExport.mutate()} /> : <Button title="Archive school year" variant="secondary" disabled={!schoolYear.trim()} loading={archive.isPending} onPress={() => confirmAction('Archive this school year?', `Eligible inactive students in ${schoolYear.trim()} will be moved to archived records. Check the school year before continuing.`, 'Archive', () => archive.mutate())} />}
     </Card> : null}
     <QueryStatus loading={query.isPending} error={query.error} retry={() => void query.refetch()} />
-    {query.data?.map(item => <ItemCard key={item.id} item={item}><DetailFields row={item.raw} fields={[
+    {pagination.records.map(item => <ItemCard key={item.id} item={item}><DetailFields row={item.raw} fields={[
       { label: 'Email', keys: ['email', 'studentEmail', 'requesterEmail'] }, { label: 'Role', keys: ['role'] },
       { label: 'Grade / section', keys: ['sectionName', 'gradeLevel', 'className'] }, { label: 'Department', keys: ['department', 'strand'] },
       { label: 'School year', keys: ['schoolYear'] },
     ]} /></ItemCard>)}
+    {pagination.totalRecords ? <Card>
+      <View style={[styles.between, { flexWrap: 'wrap' }]}><Text style={styles.bodyMuted}>Showing {pagination.start}–{pagination.end} of {pagination.totalRecords}</Text><Text accessibilityLiveRegion="polite" style={styles.body}>Page {pagination.page} of {pagination.totalPages}</Text></View>
+      <View style={styles.row}><View style={{ flex: 1 }}><Button title="Previous" variant="secondary" disabled={pagination.page <= 1} onPress={() => setPage(pagination.page - 1)} /></View><View style={{ flex: 1 }}><Button title="Next" variant="secondary" disabled={pagination.page >= pagination.totalPages} onPress={() => setPage(pagination.page + 1)} /></View></View>
+    </Card> : null}
     {query.isSuccess && !query.data.length ? <Empty title={filter ? 'No matching records' : 'No records yet'} detail={filter ? 'Try a different name or remove your search.' : 'School records will appear when they are available to your account.'} /> : null}
   </Screen>;
 }

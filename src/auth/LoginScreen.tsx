@@ -245,7 +245,7 @@ function TextAction({ title, icon, onPress, disabled = false }: { title: string;
 function LoginAction({ title, loadingTitle, onPress, loading, disabled }: {
   title: string; loadingTitle: string; onPress: () => void; loading: boolean; disabled: boolean;
 }) {
-  const isGreenAction = title === 'Log In' || title === 'Send reset link';
+  const isGreenAction = title === 'Log In' || title === 'Send reset link' || title === 'Verify code';
   return <Pressable accessibilityRole="button" accessibilityLabel={loading ? loadingTitle : title} accessibilityState={{ disabled: disabled || loading, busy: loading }} aria-disabled={disabled || loading} aria-busy={loading} disabled={disabled || loading} onPress={onPress} style={({ pressed }) => [styles.submit, (disabled || loading) && { opacity: 0.62 }, pressed && { opacity: 0.85 }]}>
     <LinearGradient colors={isGreenAction ? [loginColors.deepGreen, loginColors.deepGreen, loginColors.deepGreen] : loginGradient} locations={[0, 0.5, 1]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.submitGradient}>
       <View style={styles.submitContent}>{loading && <ActivityIndicator size="small" color={isGreenAction ? '#FFFFFF' : loginColors.darkGreen} />}<Text style={[styles.submitTitle, isGreenAction && styles.loginSubmitTitle]}>{loading ? loadingTitle : title}</Text></View>

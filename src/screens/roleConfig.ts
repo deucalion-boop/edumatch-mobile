@@ -14,9 +14,6 @@ export const roleFeatures: Record<Role, { feature: Feature; detail: string; icon
     { feature: 'approvals', detail: 'Review account and export requests', icon: 'checkmark-done-outline' },
     { feature: 'academic', detail: 'Monitor school academic performance', icon: 'stats-chart-outline' },
     { feature: 'ai-usage', detail: 'Track AI usage when creating assessments', icon: 'sparkles-outline' },
-    { feature: 'records', detail: 'Create and manage school user accounts', icon: 'folder-open-outline' },
-    { feature: 'attendance', detail: 'Review school attendance records', icon: 'calendar-outline' },
-    { feature: 'announcements', detail: 'Send school messages', icon: 'megaphone-outline' },
   ],
   secretary: [
     { feature: 'records', detail: 'Find and manage school user accounts', icon: 'folder-open-outline' },

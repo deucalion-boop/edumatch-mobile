@@ -70,13 +70,10 @@ export function SettingsScreen() {
   const isCurrent = (snapshot: typeof accountSnapshot.current) => mounted.current && Boolean(snapshot.id) && accountSnapshot.current === snapshot;
   const profileKey = ['account-profile', accountId];
   const otpKey = ['admin-otp-settings', accountId];
-  const captchaKey = ['school-captcha-settings', accountId];
   const settingsAvailable = Boolean(user && !user.forcePasswordChange);
   const canChangeOtp = settingsAvailable && user?.role === 'admin';
-  const canViewCaptcha = settingsAvailable && user?.role === 'admin';
   const profileQuery = useQuery({ queryKey: profileKey, queryFn: () => authApi.profile(), enabled: settingsAvailable && section === 'profile', staleTime: 20_000 });
   const otpQuery = useQuery({ queryKey: otpKey, queryFn: () => edumatchApi.adminOtpSettings(), enabled: canChangeOtp && section === 'security', staleTime: 0 });
-  const captchaQuery = useQuery({ queryKey: captchaKey, queryFn: () => edumatchApi.captchaSettings(), enabled: canViewCaptcha && section === 'security', staleTime: 0 });
   const profile = profileQuery.data || user;
   const profileName = profile?.name || '';
   const profileEmail = profile?.email || '';
@@ -296,10 +293,6 @@ export function SettingsScreen() {
           {otpMessage ? <Notice tone="success" message={otpMessage} /> : null}
           {otpChanged ? <><Button title="Save OTP setting" loading={otpBusy} disabled={(busy && !otpBusy) || otpQuery.isFetching || !otpPassword} onPress={() => void saveOtp()} /><Button title="Cancel OTP change" variant="plain" disabled={busy} onPress={() => { setOtpChoice(null); setOtpPassword(''); setOtpFailure(null); }} /></> : null}
         </> : null}
-      </Card> : null}
-      {canViewCaptcha ? <Card><Heading title="School math CAPTCHA" detail="An addition or subtraction question protects login and password recovery." />
-        <QueryStatus loading={captchaQuery.isPending} error={captchaQuery.error} retry={() => void captchaQuery.refetch()} />
-        {captchaQuery.data && !captchaQuery.error ? <Notice message="Math CAPTCHA is required for everyone signing in or requesting a password reset. Questions expire after five minutes and can only be answered once. Changing OTP does not disable math CAPTCHA." /> : null}
       </Card> : null}
     </> : null}
   </Screen>;
